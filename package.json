@@ -1,0 +1,33 @@
+{
+  "name": "cairn",
+  "private": true,
+  "description": "Shared, persistent project memory for AI coding agents: an MCP server and dashboard backed by Neo4j.",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "claude",
+    "neo4j",
+    "ai-agents",
+    "memory",
+    "knowledge-graph"
+  ],
+  "homepage": "https://github.com/itsmemac/agentcairn#readme",
+  "bugs": {
+    "url": "https://github.com/itsmemac/agentcairn/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsmemac/agentcairn.git"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "build": "npm run build -w @agentcairn/core -w @agentcairn/mcp-server -w agentcairn",
+    "test": "npm run build && npm run test -w @agentcairn/core -w @agentcairn/mcp-server -w agentcairn",
+    "typecheck": "npm run build && npm run typecheck -w @agentcairn/core -w @agentcairn/mcp-server -w agentcairn"
+  }
+}

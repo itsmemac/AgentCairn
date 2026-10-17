@@ -1,0 +1,50 @@
+{
+  "name": "agentcairn",
+  "version": "0.1.0",
+  "description": "The cairn command: link projects to a shared memory and wire Agent Cairn into Claude Code.",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "cli",
+    "ai-agents",
+    "memory"
+  ],
+  "homepage": "https://github.com/itsmemac/agentcairn#readme",
+  "bugs": {
+    "url": "https://github.com/itsmemac/agentcairn/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsmemac/agentcairn.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "cairn": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agentcairn/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

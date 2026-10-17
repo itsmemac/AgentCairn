@@ -1,0 +1,52 @@
+{
+  "name": "@agentcairn/core",
+  "version": "0.1.0",
+  "description": "Neo4j-backed memory layer for Agent Cairn: memories, briefings, project identity and accounts.",
+  "license": "MIT",
+  "keywords": [
+    "neo4j",
+    "ai-agents",
+    "memory",
+    "knowledge-graph"
+  ],
+  "homepage": "https://github.com/itsmemac/agentcairn#readme",
+  "bugs": {
+    "url": "https://github.com/itsmemac/agentcairn/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsmemac/agentcairn.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "neo4j-driver": "^5.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

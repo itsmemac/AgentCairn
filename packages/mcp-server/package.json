@@ -1,0 +1,57 @@
+{
+  "name": "@agentcairn/mcp-server",
+  "version": "0.1.0",
+  "description": "Agent Cairn server: MCP endpoint, JSON API and dashboard for shared agent memory.",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "neo4j",
+    "ai-agents",
+    "memory",
+    "dashboard"
+  ],
+  "homepage": "https://github.com/itsmemac/agentcairn#readme",
+  "bugs": {
+    "url": "https://github.com/itsmemac/agentcairn/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsmemac/agentcairn.git",
+    "directory": "packages/mcp-server"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "cairn-mcp": "./dist/bin.js",
+    "cairn-mcp-http": "./dist/serve.js"
+  },
+  "files": [
+    "dist",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agentcairn/core": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0",
+    "cytoscape": "^3.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

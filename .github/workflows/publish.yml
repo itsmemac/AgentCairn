@@ -1,0 +1,63 @@
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # signs the packages with build provenance (public repositories only)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/ci-password-123
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p ci-password-123 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    env:
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-password-123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+
+      - name: Tag matches the package versions
+        run: |
+          for dir in core mcp-server cli; do
+            v=$(node -p "require('./packages/$dir/package.json').version")
+            [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "packages/$dir is $v but the tag is $GITHUB_REF_NAME"; exit 1; }
+          done
+
+      - run: npm run typecheck
+      - run: npm test
+
+      # core first: the server and the CLI depend on it. Already-published versions are skipped, so a failed run can be retried.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in core mcp-server cli; do
+            name=$(node -p "require('./packages/$dir/package.json').name")
+            v=$(node -p "require('./packages/$dir/package.json').version")
+            if npm view "$name@$v" version >/dev/null 2>&1; then
+              echo "$name@$v is already published, skipping"
+            else
+              npm publish -w "$name" --provenance --access public
+            fi
+          done

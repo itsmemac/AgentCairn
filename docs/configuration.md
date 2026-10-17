@@ -1,0 +1,85 @@
+# Configuration
+
+## Server environment variables
+
+Set these on the server container (see [Self-hosting](self-hosting.md)). The server also reads the first env file it finds among `$CAIRN_ENV_FILE`, `./.env` and `~/.cairn/.env`; real environment variables always win.
+
+### Neo4j
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NEO4J_URI` | `bolt://localhost:7687` | Bolt address of Neo4j. Inside Docker use an address the container can reach. |
+| `NEO4J_USER` | `neo4j` | Neo4j user |
+| `NEO4J_PASSWORD` | `neo4j` | Neo4j password. Change it: the dashboard warns while it is the default. |
+| `NEO4J_DATABASE` | server default | Database name, if not the default one |
+
+### HTTP server
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CAIRN_PORT` | `8787` | Port for the dashboard, MCP endpoint and API |
+| `CAIRN_HOST` | `0.0.0.0` | Interface to bind |
+| `CAIRN_TRUST_PROXY` | off | Set to `1` to believe `X-Forwarded-For` (only behind a proxy you control) |
+| `CAIRN_COOKIE_SECURE` | off | Set to `1` to mark dashboard session cookies `Secure` (when served over HTTPS) |
+
+### Access control
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CAIRN_TOKEN` | none | Optional static bearer token, in addition to tokens created in the dashboard |
+| `CAIRN_NO_AUTH` | off | Set to `1` to disable authentication entirely. Trusted networks only. |
+| `CAIRN_RESET_ADMIN` | off | Set to `1` for one start to remove all dashboard accounts and print a new setup code |
+
+### Dashboard
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CAIRN_CAPTURE` | `full` | `full` keeps request and response payloads in memory; `meta` keeps only a summary |
+| `CAIRN_EVENT_CAPACITY` | `2000` | How many recent requests the Live page keeps |
+
+## Client environment variables
+
+Set these where your agents and the CLI run.
+
+| Variable | Description |
+| --- | --- |
+| `CAIRN_URL` | Server address without a trailing slash or `/mcp`, for example `http://localhost:8787` |
+| `CAIRN_TOKEN` | A token created in the dashboard |
+| `CAIRN_ENV_FILE` | Path to an env file for the CLI to read (otherwise `./.env`, then `~/.cairn/.env`) |
+
+Hook tuning (`CAIRN_BRIEFING_TOKENS`, `CAIRN_CHECKPOINT_MIN_EDITS`, `CAIRN_HOOK_TIMEOUT_MS`) and the optional `CAIRN_CLI` override for the hook command are described in [Using it with Claude Code](claude-code.md).
+
+## Files in a linked project
+
+| File | Written by | Contents |
+| --- | --- | --- |
+| `.cairn.json` | `cairn init` | `{ "projectId": "…" }` |
+| `.mcp.json` | `cairn init` | The `cairn` server entry with `${CAIRN_URL}` / `${CAIRN_TOKEN}` placeholders and the project header |
+| `.claude/settings.json` or `settings.local.json` | `cairn init` | The SessionStart, Stop and PreToolUse hooks |
+| `CLAUDE.md` | `cairn init` | A block between `<!-- cairn:start -->` and `<!-- cairn:end -->` |
+
+## Endpoints
+
+| Path | Auth | Purpose |
+| --- | --- | --- |
+| `GET /healthz` | none | `200` when Neo4j is reachable, `503` otherwise |
+| `POST /mcp` | bearer token | MCP over Streamable HTTP (stateless) |
+| `/api/*` | bearer token | JSON API used by the CLI and hooks: `GET /api/project`, `POST /api/init`, `GET /api/stale-inputs`, `POST /api/briefing`, `POST /api/remote` |
+| `/ui/` | none (the app signs in) | The dashboard |
+| `/admin/api/*` | session cookie | The dashboard's own API |
+
+Project identity for `/mcp` and `/api` comes from the `X-Cairn-Project` header (an id) or `X-Cairn-Remote` (a normalized git remote such as `github.com/acme/app`).
+
+## MCP tools
+
+| Tool | Arguments | Notes |
+| --- | --- | --- |
+| `cairn_briefing` | `max_tokens?` (200–8000, default 1500) | Budgeted briefing; onboarding instructions for an empty project |
+| `cairn_recall` | `query?`, `kind?`, `area?`, `limit?`, `include_superseded?` | Fulltext search scoped to the project |
+| `cairn_remember` | `kind`, `title`, `body`, `area?`, `paths?`, `importance?` (1–5), `supersedes?` | One fact per memory; ids may be the 8-character short form |
+| `cairn_checkpoint` | `goal`, `outcome`, `decisions?`, `next?`, `resolves?`, `area?`, `paths?` | Also files each decision and an open thread for `next` |
+| `cairn_areas` | none | Areas with memory counts |
+| `cairn_forget` | `id` | Deletes a memory; anything it replaced becomes active again |
+| `cairn_status` | none | Connection, project and counts |
+
+`cairn_remember` and `cairn_checkpoint` also accept `commit_sha` and `author`, which the PreToolUse hook fills in. Memory kinds are `overview`, `decision`, `convention`, `gotcha`, `checkpoint`, `thread` and `glossary`.

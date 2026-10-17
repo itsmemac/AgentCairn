@@ -1,0 +1,44 @@
+# Run Agent Cairn with Docker Compose.
+#
+#   cp .env.example .env            # set NEO4J_PASSWORD
+#   docker compose --profile with-neo4j up -d
+#   docker compose logs cairn    # the first start prints a one-time setup code
+#
+# Then open http://localhost:8787/ui/ and create the admin account with that code.
+#
+# Already running Neo4j? Skip the profile and point the server at it in .env:
+#   NEO4J_URI=bolt://your-neo4j-host:7687
+#   docker compose up -d cairn
+services:
+  cairn:
+    image: ghcr.io/itsmemac/agentcairn:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${CAIRN_PORT:-8787}:8787"
+    environment:
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      # Optional. Agents normally use tokens created in the dashboard.
+      CAIRN_TOKEN: ${CAIRN_TOKEN:-}
+      CAIRN_NO_AUTH: ${CAIRN_NO_AUTH:-}
+      CAIRN_CAPTURE: ${CAIRN_CAPTURE:-full}
+      CAIRN_TRUST_PROXY: ${CAIRN_TRUST_PROXY:-}
+      CAIRN_COOKIE_SECURE: ${CAIRN_COOKIE_SECURE:-}
+
+  neo4j:
+    profiles: ["with-neo4j"]
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+    volumes:
+      - neo4j-data:/data
+    # The Neo4j browser (7474) and Bolt (7687) are published only if you uncomment this:
+    # ports:
+    #   - "127.0.0.1:7474:7474"
+    #   - "127.0.0.1:7687:7687"
+
+volumes:
+  neo4j-data:

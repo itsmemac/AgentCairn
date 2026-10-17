@@ -1,0 +1,36 @@
+name: Question or help
+description: Ask how something works or get unstuck
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, the [self-hosting troubleshooting table](https://github.com/itsmemac/agentcairn/blob/main/docs/self-hosting.md#troubleshooting) and [Claude Code guide](https://github.com/itsmemac/agentcairn/blob/main/docs/claude-code.md#troubleshooting) cover the most common problems, and `cairn doctor` checks your setup end to end.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to know?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands you ran and what happened. Please remove tokens and passwords.
+      render: shell
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run it?
+      options:
+        - Docker Compose
+        - Docker run / Unraid template
+        - From source (npm)
+        - Not set up yet
+        - Other
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else we should know?
+      description: Your agent or client, operating system, network setup (reverse proxy, VPN), and so on.

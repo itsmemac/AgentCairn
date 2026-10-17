@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/itsmemac/agentcairn/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Self-hosting troubleshooting
+    url: https://github.com/itsmemac/agentcairn/blob/main/docs/self-hosting.md#troubleshooting
+    about: Nothing on the port, 401 errors, lost setup code, Neo4j connection problems.
+  - name: Contributing guide
+    url: https://github.com/itsmemac/agentcairn/blob/main/CONTRIBUTING.md
+    about: How to set up a development checkout and what makes a good pull request.

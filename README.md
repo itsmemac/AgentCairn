@@ -1,0 +1,118 @@
+# Agent Cairn
+
+**Shared, persistent project memory for AI coding agents.**
+
+A cairn is a stack of stones that earlier hikers leave so the next one knows the way. Agent Cairn does that for agents: one records what it learned, the next one picks up the trail.
+
+[![CI](https://github.com/itsmemac/agentcairn/actions/workflows/ci.yml/badge.svg)](https://github.com/itsmemac/agentcairn/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520.12-brightgreen.svg)](package.json)
+
+An AI agent that opens your project cold has to read files, guess conventions and ask you to explain things you have explained before, and it does that again on every new session, machine and account. Agent Cairn gives agents a **shared memory** stored in Neo4j: what the project is, how it is built, the traps that cost time, the decisions made and why. Any agent connecting through MCP starts from a compact, token-budgeted briefing instead of re-reading the repository.
+
+![The live dashboard](docs/images/live.jpg)
+
+## How it works
+
+```
+ Claude Code ──MCP over HTTP + token──►  Agent Cairn server  ──bolt──►  Neo4j
+ (any machine,      hooks + CLI            (Docker)                  (graph)
+  any account)                                │
+                                         dashboard at /ui/
+```
+
+- **Agents write the memories.** Through MCP tools (`cairn_remember`, `cairn_checkpoint`) an agent records what it learns. The server never calls an LLM: no API key, no per-token cost, and it works with any MCP-capable agent.
+- **Briefings instead of crawling.** `cairn_briefing` assembles the most important memories for a project within a token budget: overview, conventions, gotchas, open threads, recent checkpoints, decisions.
+- **Memories know when they are stale.** Each memory records the commit and files it was written about. If those files have changed, the briefing flags it.
+- **History is kept.** A changed fact *supersedes* the old one rather than overwriting it, so concurrent agents cannot clobber each other and the reasoning trail survives.
+- **One memory per project, across machines.** A project is identified by an explicit id or by its (normalized, hashed) git remote, so every clone resolves to the same memory.
+- **You can see everything.** A built-in dashboard shows every request as it happens, the memory graph, and lets you manage access.
+
+## Quick start
+
+You need Docker. Everything below runs on your own machine or server.
+
+**1. Start the server and a Neo4j to go with it**
+
+```bash
+git clone https://github.com/itsmemac/agentcairn.git && cd agentcairn
+cp .env.example .env                       # set NEO4J_PASSWORD
+docker compose --profile with-neo4j up -d
+docker compose logs cairn               # the first start prints a one-time setup code
+```
+
+Already running Neo4j? Set `NEO4J_URI` in `.env` and run `docker compose up -d cairn` instead.
+
+**2. Create your admin account.** Open <http://localhost:8787/ui/>, enter the setup code from the log, choose a username and password.
+
+**3. Connect an agent.** In the dashboard, create a token (**Access → Create token**). Then, once per machine:
+
+```bash
+claude mcp add cairn --scope user -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> -- npx -y agentcairn mcp
+```
+
+That is the whole install. It works in every folder: the project comes from the folder's git remote (or its `.cairn.json`), so there is nothing to configure per repository. Start Claude Code in a project and ask it to call `cairn_status`. The first `cairn_briefing` of an empty project returns instructions that walk the agent through recording what it learns about the repository.
+
+**4. Optional: hooks and an explicit project id.** The `cairn` CLI (`npx -y agentcairn`) links a folder to a project and installs Claude Code hooks that inject the briefing at session start and remind the agent to checkpoint. See [Using it with Claude Code](docs/claude-code.md).
+
+> The npm packages are not published yet. Until they are, build the CLI from source: `npm install && npm run build`, then run `node packages/cli/dist/bin.js`.
+
+## The dashboard
+
+| | |
+| --- | --- |
+| ![Memory graph](docs/images/graph.jpg) | ![A project's memories](docs/images/project.jpg) |
+| **Graph**: the project at the root, its areas, and the memories under each. Nodes glow when an agent reads or writes them. | **Projects**: every memory with its kind, area, importance, author and commit. |
+
+![Projects, in light mode](docs/images/projects-light.jpg)
+
+- **Live**: every request with its payload, latency and the memories it touched; throughput, per-tool latency, clients online.
+- **Projects** and **Graph**: browse, search and explore memories; follow supersede chains.
+- **Query**: a read-only Cypher console.
+- **Access**: create and revoke tokens, copy ready-made connection commands.
+- **System**: server and Neo4j health, graph size, security and capture settings.
+
+Dark and light themes, phone-friendly. Request payloads are kept **in memory only** (the last 2,000) and `Authorization` headers are never recorded.
+
+## What agents get
+
+| Tool | Purpose |
+| --- | --- |
+| `cairn_briefing` | Start here: a budgeted briefing, or onboarding instructions for an empty project |
+| `cairn_recall` | Search memories by text, kind and area |
+| `cairn_remember` | Record a decision, convention, gotcha, overview, open thread or glossary term |
+| `cairn_checkpoint` | Record a finished goal, its decisions, and what is next |
+| `cairn_areas` | List the areas memories are filed under |
+| `cairn_forget` | Delete a memory that was wrong |
+| `cairn_status` | Health check: connection, project, counts |
+
+## Documentation
+
+- [Self-hosting](docs/self-hosting.md): Docker, TLS, upgrades, backups, troubleshooting
+- [Unraid](docs/unraid.md): running it on an Unraid server
+- [Using it with Claude Code](docs/claude-code.md): connecting, project identity, hooks
+- [Configuration](docs/configuration.md): every setting and file
+- [Architecture](docs/architecture.md): data model, briefings, staleness, security model
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+
+## Repository layout
+
+| Package | What it is |
+| --- | --- |
+| [`packages/core`](packages/core) | Schema, memories, briefings, project identity, accounts and graph queries on Neo4j |
+| [`packages/mcp-server`](packages/mcp-server) | The MCP server (HTTP, plus a local stdio mode), the JSON API and the dashboard |
+| [`packages/cli`](packages/cli) | The `cairn` command and the Claude Code hooks |
+
+## Development
+
+```bash
+npm install
+cp .env.example .env     # point NEO4J_URI at a throwaway Neo4j (see CONTRIBUTING.md)
+npm test                 # builds, then runs every package's tests
+```
+
+The integration tests run against a real Neo4j, so use a disposable instance. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)

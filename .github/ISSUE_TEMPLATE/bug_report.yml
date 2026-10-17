@@ -1,0 +1,93 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more precisely you can describe it, the faster it can be fixed.
+
+        **Security problem?** Please do not file it here. Use [private vulnerability reporting](https://github.com/itsmemac/agentcairn/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the problem, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that triggers it.
+      placeholder: |
+        1. Start the server with ...
+        2. Open the dashboard and ...
+        3. See the error ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Server / MCP tools
+        - Dashboard (web UI)
+        - brain CLI or Claude Code hooks
+        - Graph model / migrations (core)
+        - Docker image or Compose setup
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Agent Cairn version
+      description: The version shown on the dashboard's System page, plus the image tag or the commit you built from.
+      placeholder: ghcr.io/itsmemac/agentcairn:latest
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run it?
+      options:
+        - Docker Compose
+        - Docker run / Unraid template
+        - From source (npm)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: neo4j
+    attributes:
+      label: Neo4j version and edition
+      placeholder: Neo4j 5.26 Community
+  - type: input
+    id: client
+    attributes:
+      label: Agent / client
+      description: Which MCP client and version, if the problem involves an agent.
+      placeholder: Claude Code 2.x on Windows 11
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and output
+      description: Server log (`docker compose logs cairn`), `cairn doctor` output, or the browser console. This is formatted as code automatically.
+      render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag images here if they help. Hide tokens, project names and anything private.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this one.
+          required: true
+        - label: I removed tokens, passwords and private data from everything I pasted.
+          required: true

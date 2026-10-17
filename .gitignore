@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# machine-specific Claude Code hooks written by `cairn init` from a source checkout
+.claude/settings.local.json

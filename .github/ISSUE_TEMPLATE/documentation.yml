@@ -1,0 +1,43 @@
+name: Documentation
+description: Something in the docs is missing, unclear or wrong
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Which page or section?
+      description: A link or file path, for example `docs/self-hosting.md`.
+      placeholder: docs/self-hosting.md#troubleshooting
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is the problem?
+      options:
+        - Missing information
+        - Unclear or confusing
+        - Incorrect or out of date
+        - A command or example does not work
+        - Typo or formatting
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What were you trying to do, what did the docs say, and what happened?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording
+      description: Optional. If you know what it should say, write it here; a pull request is even better.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I would be willing to open a pull request for this.

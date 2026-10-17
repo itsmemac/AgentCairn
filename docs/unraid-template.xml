@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>cairn</Name>
+  <Repository>ghcr.io/itsmemac/agentcairn:latest</Repository>
+  <Registry>https://github.com/itsmemac/agentcairn/pkgs/container/cairn</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/itsmemac/agentcairn/issues</Support>
+  <Project>https://github.com/itsmemac/agentcairn</Project>
+  <Overview>Shared project memory for AI coding agents. Serves an MCP endpoint and a dashboard (live request feed, graph explorer, Cypher console) backed by your Neo4j. On first start the log prints a one-time code: use it at the WebUI to create the admin account.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8787]/ui/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/itsmemac/agentcairn/main/packages/mcp-server/ui/favicon.svg</Icon>
+  <ExtraParams>--health-cmd="wget -qO- http://127.0.0.1:8787/healthz" --health-interval=30s</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <Config Name="Dashboard and MCP port" Target="8787" Default="8787" Mode="tcp" Description="Dashboard at /ui/, MCP at /mcp." Type="Port" Display="always" Required="true" Mask="false">8787</Config>
+  <Config Name="Neo4j URI" Target="NEO4J_URI" Default="bolt://localhost:7687" Mode="" Description="Address of your Neo4j (bolt://host:7687). Inside Docker, localhost is the container itself: use the address the container can reach." Type="Variable" Display="always" Required="true" Mask="false">bolt://localhost:7687</Config>
+  <Config Name="Neo4j user" Target="NEO4J_USER" Default="neo4j" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">neo4j</Config>
+  <Config Name="Neo4j password" Target="NEO4J_PASSWORD" Default="" Mode="" Description="Change Neo4j's default password." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Static token (optional)" Target="CAIRN_TOKEN" Default="" Mode="" Description="Normally leave empty and create tokens in the dashboard (Access)." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Capture mode" Target="CAIRN_CAPTURE" Default="full" Mode="" Description="full keeps request and response payloads in memory for the dashboard; meta keeps only a summary." Type="Variable" Display="advanced" Required="false" Mask="false">full</Config>
+  <Config Name="Behind a reverse proxy" Target="CAIRN_TRUST_PROXY" Default="" Mode="" Description="Set to 1 only if a proxy you control sets X-Forwarded-For." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>
