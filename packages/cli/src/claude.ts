@@ -156,7 +156,7 @@ allowed-tools: Bash(${tool}:*)
 ${COMMAND_MARKER}
 The Agent Cairn CLI ran in this project folder:
 
-!\`${cli} $ARGUMENTS\`
+!\`${cli} $ARGUMENTS 2>&1 || true\`
 
 Show the output above unchanged. If it reports a problem, explain it in a sentence or two and give the one next step. Do not edit any files yourself.
 `

@@ -139,7 +139,7 @@ describe('/cairn slash command', () => {
   it('runs the CLI with the typed arguments and allows only that tool', () => {
     const file = cairnCommandFile('npx -y agentcairn')
     expect(file).toContain('allowed-tools: Bash(npx:*)')
-    expect(file).toContain('!`npx -y agentcairn $ARGUMENTS`')
+    expect(file).toContain('!`npx -y agentcairn $ARGUMENTS 2>&1 || true`')
     expect(cairnCommandFile(CLI)).toContain('allowed-tools: Bash(node:*)')
   })
 

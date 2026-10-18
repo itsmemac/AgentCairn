@@ -79,7 +79,7 @@ export CAIRN_URL=http://localhost:8787
 export CAIRN_TOKEN=<token>
 
 cairn init               # identify the project by its git remote
-cairn init my-project    # or by an explicit id
+cairn init my-project --create    # or by an explicit id (--create the first time)
 cairn doctor             # check the whole setup
 ```
 
@@ -99,7 +99,7 @@ Re-running `cairn init` is safe: it merges into existing files and changes nothi
 
 ### Commands
 
-Inside Claude Code, the same commands are available as `/cairn <command>` (for example `/cairn init my-project`). `cairn init` writes `.claude/commands/cairn.md` when the CLI is run through `npx`; from a source checkout, run `cairn install-command` once to install it for all projects.
+Inside Claude Code, the same commands are available as `/cairn <command>` (for example `/cairn init my-project --create` the first time you name a project). `cairn init` writes `.claude/commands/cairn.md` when the CLI is run through `npx`; from a source checkout, run `cairn install-command` once to install it for all projects.
 
 | Command | What it does |
 | --- | --- |
@@ -146,6 +146,7 @@ Run `cairn doctor` first. It reports the server address, token, connectivity, pr
 - **`claude mcp list` shows `cairn` as failed.** Run the bridge by hand to see why: `npx -y agentcairn mcp` (it waits for input; press Ctrl+C). Typical causes: Node older than 20, the server address is not reachable from this computer (try `curl <address>/healthz`), or a wrong token (`401`).
 - **The `cairn` server shows as failed or unauthorized in Claude Code.** `CAIRN_URL` or `CAIRN_TOKEN` is missing from the environment Claude Code started in. Set them and restart the app.
 - **`401`**: the token is wrong or revoked; create a new one under **Access**.
+- **A project named `git-<letters and digits>` appeared.** `cairn init` with no id names the project after the git remote. To give the repository a real name instead, run `cairn init <name> --create --force-remote` (it moves the remote to the new project), then delete the empty `git-…` project from its page in the dashboard.
 - **"Project … does not exist yet"**: create it under **Projects → New project**, or run `cairn init <id> --create`.
 - **The agent never uses Agent Cairn.** Install the hooks and `CLAUDE.md` block with `cairn init`, or add the instructions yourself.
 - **Memories show no commit or author.** The PreToolUse hook is not installed or not running; check `cairn doctor`.
