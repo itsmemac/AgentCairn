@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## [0.1.1] - 2026-10-18
+## [0.1.2] - 2026-10-18
 
 First public version.
 
