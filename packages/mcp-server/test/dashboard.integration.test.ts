@@ -278,6 +278,18 @@ describe.skipIf(!adminSlotFree)('dashboard with the one-time setup code', () => 
     token = fresh.token
   })
 
+  it('deletes a project with everything under it, and only for a signed-in admin', async () => {
+    const id = `${run}-delete-me`
+    expect((await admin('projects', { body: { id } })).status).toBe(200)
+    expect((await admin(`projects/${id}`, { method: 'DELETE', cookie: '' })).status).toBe(401)
+    expect((await admin(`projects/${id}`, { method: 'DELETE', headers: { origin: 'http://evil.example' } })).status).toBe(403)
+
+    const gone = await json(await admin(`projects/${id}`, { method: 'DELETE' }))
+    expect(gone).toMatchObject({ id, memories: 0, areas: 0, remotes: 0 })
+    expect((await admin(`projects/${id}`)).status).toBe(404)
+    expect((await admin(`projects/${id}`, { method: 'DELETE' })).status).toBe(404)
+  })
+
   it('captures what agents send and receive, without ever storing the token', async () => {
     const client = new Client({ name: 'dash-test', version: '1' })
     await client.connect(

@@ -25,6 +25,37 @@ export async function ensureProject(brain: Brain, id: string): Promise<{ created
   return { created: !before }
 }
 
+export interface DeletedProject {
+  memories: number
+  areas: number
+  remotes: number
+}
+
+/**
+ * Removes a project with everything under it: its memories (active and superseded), areas and the git
+ * remotes registered to it. Returns null when the project does not exist. One transaction, so a failure
+ * leaves it whole.
+ */
+export async function deleteProject(brain: Brain, id: string): Promise<DeletedProject | null> {
+  const session = brain.session()
+  try {
+    return await session.executeWrite(async tx => {
+      const count = async (query: string) => Number((await tx.run(query, { id })).records[0]?.get('n') ?? 0)
+      if (!(await count('MATCH (p:Project {id: $id}) RETURN count(p) AS n'))) return null
+      const memories = await count('MATCH (m:Memory {projectId: $id}) RETURN count(m) AS n')
+      const areas = await count('MATCH (a:Area {projectId: $id}) RETURN count(a) AS n')
+      const remotes = await count('MATCH (r:Remote)-[:BELONGS_TO]->(:Project {id: $id}) RETURN count(r) AS n')
+      await tx.run('MATCH (m:Memory {projectId: $id}) DETACH DELETE m', { id })
+      await tx.run('MATCH (a:Area {projectId: $id}) DETACH DELETE a', { id })
+      await tx.run('MATCH (r:Remote)-[:BELONGS_TO]->(:Project {id: $id}) DETACH DELETE r', { id })
+      await tx.run('MATCH (p:Project {id: $id}) DETACH DELETE p', { id })
+      return { memories, areas, remotes }
+    })
+  } finally {
+    await session.close()
+  }
+}
+
 export async function findProjectByRemote(brain: Brain, hash: string): Promise<string | null> {
   const r = await brain.run(
     'MATCH (:Remote {hash: $hash})-[:BELONGS_TO]->(p:Project) RETURN p.id AS id',

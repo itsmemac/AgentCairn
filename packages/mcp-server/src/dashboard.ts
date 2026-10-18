@@ -14,6 +14,7 @@ import {
   countAdmins,
   createApiToken,
   createFirstAdmin,
+  deleteProject,
   ensureProject,
   getGraph,
   getMemory,
@@ -291,6 +292,13 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       const detail = await getProjectDetail(brain, decodeURIComponent(projectMatch[1]!))
       if (!detail) throw new HttpError(404, 'not_found', 'No such project.')
       return send(res, 200, detail)
+    }
+
+    if (projectMatch && method === 'DELETE') {
+      const id = decodeURIComponent(projectMatch[1]!)
+      const gone = await deleteProject(brain, id)
+      if (!gone) throw new HttpError(404, 'not_found', 'No such project.')
+      return send(res, 200, { id, ...gone })
     }
 
     if (route === 'memories' && method === 'GET') {

@@ -1,6 +1,42 @@
 import { api, qs } from '../api.js'
-import { ago, debounce, emptyState, fmt, h, icon, KINDS, kindBar, searchBox } from '../dom.js'
+import { ago, debounce, emptyState, fmt, h, icon, KINDS, kindBar, searchBox, toast } from '../dom.js'
+import { closeDrawer, openDrawer } from '../drawer.js'
 import { importance, openMemory } from './memoryDrawer.js'
+
+/** Deleting a project removes every memory under it, so it asks for the project's name first. */
+function confirmDelete(id, detail, navigate) {
+  const input = h('input', { class: 'input', placeholder: id, 'aria-label': 'Project name to confirm', autocomplete: 'off', spellcheck: 'false', style: { width: '100%' } })
+  const error = h('p', { class: 'error', hidden: '' })
+  const go = h('button', { class: 'btn danger', type: 'button', disabled: '' }, icon('trash'), 'Delete project')
+  const memories = detail.active + detail.superseded
+  input.addEventListener('input', () => { go.disabled = input.value.trim() !== id })
+  go.addEventListener('click', async () => {
+    go.disabled = true
+    try {
+      await api(`projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      closeDrawer()
+      toast(`Deleted ${id}`)
+      navigate('#/projects')
+    } catch (e) {
+      error.textContent = e.message
+      error.hidden = false
+      go.disabled = false
+    }
+  })
+  openDrawer(
+    h('strong', null, 'Delete project'),
+    h(
+      'div',
+      { class: 'stack' },
+      h('p', null, 'This permanently deletes ', h('b', { class: 'mono' }, id), ` and everything under it: ${fmt.int(memories)} ${memories === 1 ? 'memory' : 'memories'} (including superseded ones), ${fmt.int(detail.areas.length)} ${detail.areas.length === 1 ? 'area' : 'areas'} and ${fmt.int(detail.remotes)} git ${detail.remotes === 1 ? 'remote' : 'remotes'}. It cannot be undone.`),
+      h('p', { class: 'dim' }, 'Agents that still point at this project will simply create it again, empty, the next time they write.'),
+      h('div', { class: 'field' }, h('label', null, 'Type the project name to confirm'), input),
+      error,
+      go,
+    ),
+  )
+  input.focus()
+}
 
 export async function mount(container, { params, navigate }) {
   const id = params.id
@@ -70,7 +106,7 @@ export async function mount(container, { params, navigate }) {
       'div',
       { class: 'page-head' },
       h('div', null, h('div', { class: 'crumbs' }, h('a', { href: '#/projects' }, 'Projects'), ' /'), h('h1', { class: 'mono', style: { fontSize: '22px' } }, id)),
-      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/graph?project=${encodeURIComponent(id)}`) }, icon('graph'), 'Open in graph'), h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/access?project=${encodeURIComponent(id)}`) }, icon('link'), 'Connect an agent')),
+      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/graph?project=${encodeURIComponent(id)}`) }, icon('graph'), 'Open in graph'), h('button', { class: 'btn danger', type: 'button', onclick: () => confirmDelete(id, detail, navigate) }, icon('trash'), 'Delete'), h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/access?project=${encodeURIComponent(id)}`) }, icon('link'), 'Connect an agent')),
     ),
     h(
       'div',
