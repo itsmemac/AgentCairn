@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { loadEnvironment } from '@agentcairn/core'
 
 export class ClientError extends Error {
@@ -17,17 +20,41 @@ export interface ClientConfig {
   token: string | undefined
 }
 
-/** Reads CAIRN_URL and CAIRN_TOKEN from the environment or the first env file found. */
-export function loadClientConfig(cwd: string = process.cwd(), env: NodeJS.ProcessEnv = process.env): ClientConfig {
+/**
+ * The address and token Claude Code was given when the server was registered
+ * (`claude mcp add cairn --scope user -e CAIRN_URL=... -e CAIRN_TOKEN=...`), so `cairn init` and the hooks
+ * work right after that one command without exporting anything.
+ */
+export function claudeRegistration(claudeJson: string = join(homedir(), '.claude.json')): { url?: string; token?: string } {
+  try {
+    const registered = (JSON.parse(readFileSync(claudeJson, 'utf8')) as { mcpServers?: Record<string, { env?: Record<string, unknown> }> })
+      .mcpServers?.cairn?.env
+    const text = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v : undefined)
+    return { url: text(registered?.CAIRN_URL), token: text(registered?.CAIRN_TOKEN) }
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Reads CAIRN_URL and CAIRN_TOKEN from the environment, then the first env file found, then the
+ * server registration in Claude Code's user config.
+ */
+export function loadClientConfig(
+  cwd: string = process.cwd(),
+  env: NodeJS.ProcessEnv = process.env,
+  claudeJson?: string,
+): ClientConfig {
   loadEnvironment(cwd, env)
-  const url = env.CAIRN_URL?.trim().replace(/\/+$/, '')
+  const registered = env.CAIRN_URL?.trim() ? {} : claudeRegistration(claudeJson)
+  const url = (env.CAIRN_URL ?? registered.url)?.trim().replace(/\/+$/, '')
   if (!url) {
     throw new ClientError(
-      'CAIRN_URL is not set. Set it to your Agent Cairn server, e.g. http://localhost:8787 (environment variable, or in ~/.cairn/.env).',
+      'CAIRN_URL is not set. Set it to your Agent Cairn server, e.g. http://localhost:8787 (environment variable, ~/.cairn/.env, or register the server with `claude mcp add cairn --scope user -e CAIRN_URL=... -e CAIRN_TOKEN=... -- npx -y agentcairn mcp`).',
       'no_url',
     )
   }
-  return { url, token: env.CAIRN_TOKEN || undefined }
+  return { url, token: env.CAIRN_TOKEN || registered.token || undefined }
 }
 
 export interface ProjectHint {
