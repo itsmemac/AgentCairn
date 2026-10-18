@@ -1,18 +1,32 @@
 # agentcairn
 
-The `cairn` command for [Agent Cairn](https://github.com/itsmemac/agentcairn): link a project folder to a shared memory and wire it into Claude Code.
+The command line for [Agent Cairn](https://github.com/itsmemac/agentcairn): shared, persistent project memory for AI coding agents, stored in Neo4j.
+
+## Connect Claude Code (one command, every project)
+
+You need a running Agent Cairn server and a token from its dashboard (**Access → Create token**). Then, once per machine:
 
 ```bash
-export CAIRN_URL=http://localhost:8787     # your Agent Cairn server
-export CAIRN_TOKEN=<token from the dashboard>
-
-cairn init               # identify the project by its git remote
-cairn init my-project    # or by an explicit id
-cairn doctor             # check the whole setup
-cairn briefing           # print what an agent would be told
-cairn remote <git-url>   # make another git URL resolve to this project
+claude mcp add cairn --scope user \
+  -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> \
+  -- npx -y agentcairn mcp
 ```
 
-`cairn init` writes `.cairn.json`, a `.mcp.json` server entry (no secrets: the address and token come from your environment), Claude Code hooks, and a short `CLAUDE.md` block. The hooks inject the briefing at session start, remind the agent to checkpoint after substantial work, and stamp memories with the commit and author.
+`agentcairn mcp` is a small bridge to your server. It takes the project from the folder Claude Code was started in (its `.cairn.json`, else the git remote), so there is nothing to configure per repository.
+
+## Commands
+
+```bash
+npx -y agentcairn <command>     # or: npm install -g agentcairn, then use `cairn`
+
+cairn init [project-id]    # link this folder to a project; add hooks and a CLAUDE.md block
+cairn doctor               # check the whole setup
+cairn briefing             # print what an agent would be told
+cairn remote <git-url>     # make another git URL resolve to this project
+cairn install-command      # add the /cairn slash command to Claude Code
+cairn mcp                  # the stdio bridge used above
+```
+
+`cairn init` writes `.cairn.json`, a `.mcp.json` server entry (no secrets: the address and token come from your environment), Claude Code hooks and a short `CLAUDE.md` block. The hooks inject the briefing at session start, remind the agent to checkpoint after substantial work, and stamp memories with the commit and author. Set `CAIRN_URL` and `CAIRN_TOKEN` in your environment for the hooks to reach the server.
 
 Everything here runs on your machine, because the server cannot see your repository. See [Using it with Claude Code](https://github.com/itsmemac/agentcairn/blob/main/docs/claude-code.md). MIT licensed.
