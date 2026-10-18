@@ -7,10 +7,10 @@ The command line for [Agent Cairn](https://github.com/itsmemac/agentcairn): shar
 You need a running Agent Cairn server and a token from its dashboard (**Access → Create token**). Then, once per machine:
 
 ```bash
-claude mcp add cairn --scope user \
-  -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> \
-  -- npx -y agentcairn mcp
+claude mcp add cairn --scope user -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> -- npx -y agentcairn mcp
 ```
+
+Check it with `claude mcp list` (it should say Connected), then restart Claude Code. If it says "MCP server cairn already exists in user config", run `claude mcp remove cairn --scope user` and add it again.
 
 `agentcairn mcp` is a small bridge to your server. It takes the project from the folder Claude Code was started in (its `.cairn.json`, else the git remote), so there is nothing to configure per repository.
 

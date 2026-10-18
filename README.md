@@ -45,13 +45,35 @@ Already running Neo4j? Set `NEO4J_URI` in `.env` and run `docker compose up -d c
 
 **2. Create your admin account.** Open <http://localhost:8787/ui/>, enter the setup code from the log, choose a username and password.
 
-**3. Connect an agent.** In the dashboard, create a token (**Access → Create token**). Then, once per machine:
+**3. Connect Claude Code.** Do this on every computer that should use the memory.
+
+You need [Claude Code](https://claude.com/claude-code), Node.js 20.12 or newer (for `npx`), and a token for that computer.
+
+1. In the dashboard, open **Access → Create token** and copy the token. It is shown once, so create one per computer and name it after the machine.
+2. Register the server with Claude Code. Replace the address with where your server is reachable from that computer, for example `http://192.168.0.40:8787`:
+
+   ```bash
+   claude mcp add cairn --scope user -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> -- npx -y agentcairn mcp
+   ```
+
+   It is one line on purpose, so it pastes the same into PowerShell, cmd, bash and zsh.
+
+3. Check it, then restart Claude Code:
+
+   ```bash
+   claude mcp list          # cairn: ✓ Connected
+   ```
+
+That is the whole install. `--scope user` makes it available in every folder, and the project is taken from the folder's git remote (or its `.cairn.json`), so there is nothing to configure per repository. In Claude Code, ask it to call `cairn_status`. The first `cairn_briefing` of an empty project returns instructions that walk the agent through recording what it learns about the repository.
+
+If `claude mcp add` says **"MCP server cairn already exists in user config"**, remove the old entry and add it again (this also updates the address or token):
+It will not show in the Claude desktop app's server list (that lists only the desktop app's own servers); check with `claude mcp list` instead.
 
 ```bash
-claude mcp add cairn --scope user -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> -- npx -y agentcairn mcp
+claude mcp remove cairn --scope user
 ```
 
-That is the whole install. It works in every folder: the project comes from the folder's git remote (or its `.cairn.json`), so there is nothing to configure per repository. Start Claude Code in a project and ask it to call `cairn_status`. The first `cairn_briefing` of an empty project returns instructions that walk the agent through recording what it learns about the repository.
+More ways to connect, updating, uninstalling and troubleshooting are in [Using it with Claude Code](docs/claude-code.md).
 
 **4. Optional: hooks and an explicit project id.** The `cairn` CLI (`npx -y agentcairn`) links a folder to a project and installs Claude Code hooks that inject the briefing at session start and remind the agent to checkpoint. See [Using it with Claude Code](docs/claude-code.md).
 

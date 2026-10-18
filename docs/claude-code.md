@@ -4,13 +4,36 @@ Claude Code talks to the server over MCP. There are a few ways to connect, from 
 
 ## Option 0: one command, every project (recommended)
 
-Run this once per machine. The **Access** page generates it with your server address and token filled in.
+**Before you start:** [Claude Code](https://claude.com/claude-code), Node.js 20.12 or newer (it provides `npx`), a reachable Agent Cairn server, and a token for this computer (dashboard → **Access → Create token**; one per computer is cleanest).
+
+**1. Add it, once per machine.** The **Access** page generates this command with your address and token filled in.
 
 ```bash
 claude mcp add cairn --scope user -e CAIRN_URL=http://localhost:8787 -e CAIRN_TOKEN=<token> -- npx -y agentcairn mcp
 ```
 
-`cairn mcp` is a small stdio bridge to your server. It reads the project from the folder Claude Code was started in: `.cairn.json` if there is one, otherwise the git remote. A new repository therefore gets its own brain with no setup. Use `cairn init <project-id>` (Option 3) when a folder has no git remote, or when forks and mirrors should share one project.
+It is one line on purpose, so it pastes the same into PowerShell, cmd, bash and zsh.
+
+**2. Check it.**
+
+```bash
+claude mcp list          # cairn: ✓ Connected
+claude mcp get cairn     # scope, command and environment
+```
+
+Restart Claude Code (or start a new session), then ask the agent to call `cairn_status`.
+
+`cairn mcp` is a small stdio bridge to your server. It reads the project from the folder Claude Code was started in: `.cairn.json` if there is one, otherwise the git remote. A new repository therefore gets its own memory with no setup. Use `cairn init <project-id>` (Option 3) when a folder has no git remote, or when forks and mirrors should share one project.
+
+**Change the address or token, or reinstall.** `claude mcp add` refuses to overwrite, and prints `MCP server cairn already exists in user config`. Remove it first, then add it again:
+
+```bash
+claude mcp remove cairn --scope user
+```
+
+**Update.** `npx -y agentcairn` fetches the latest release the next time Claude Code starts the server, so there is nothing to do. To pin a version, use `agentcairn@0.1.2` in the command.
+
+**Uninstall.** `claude mcp remove cairn --scope user`. If you also ran `cairn install-command`, delete `~/.claude/commands/cairn.md`.
 
 The bridge needs Node 20+. Without Node, use Option 1.
 
@@ -119,6 +142,8 @@ Hooks never block a session: if the server is unreachable they stay silent. You 
 
 Run `cairn doctor` first. It reports the server address, token, connectivity, project resolution, and whether the files and hooks are in place.
 
+- **"MCP server cairn already exists in user config".** Run `claude mcp remove cairn --scope user`, then add it again. It does not appear in the Claude desktop app's "MCP servers" dialog: that dialog lists only the desktop app's own servers, while `claude mcp add` writes to the Claude Code CLI config. Use `claude mcp list` and `claude mcp get cairn` to see it, and `claude mcp get` also names the scope if it is not `user`.
+- **`claude mcp list` shows `cairn` as failed.** Run the bridge by hand to see why: `npx -y agentcairn mcp` (it waits for input; press Ctrl+C). Typical causes: Node older than 20, the server address is not reachable from this computer (try `curl <address>/healthz`), or a wrong token (`401`).
 - **The `cairn` server shows as failed or unauthorized in Claude Code.** `CAIRN_URL` or `CAIRN_TOKEN` is missing from the environment Claude Code started in. Set them and restart the app.
 - **`401`**: the token is wrong or revoked; create a new one under **Access**.
 - **"Project … does not exist yet"**: create it under **Projects → New project**, or run `cairn init <id> --create`.
