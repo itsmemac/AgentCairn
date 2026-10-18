@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## [0.1.3] - 2026-10-18
+
+- `cairn init`, `doctor` and the hooks use the address and token given to `claude mcp add`, so the one-line install is enough.
+- A step-by-step install in the README and Claude Code guide, with troubleshooting.
+
 ## [0.1.2] - 2026-10-18
 
 - The `agentcairn` README on npm now leads with the one-line install.
