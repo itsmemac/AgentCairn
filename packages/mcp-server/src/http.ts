@@ -30,6 +30,7 @@ import { type BrainEvent, EventLog } from './events.js'
 import { SessionStore, SetupGate } from './security.js'
 import { createBrainServer } from './server.js'
 import { HttpError, asRecord, clientIp, header, readJson, send } from './util.js'
+import { SERVER_VERSION } from './version.js'
 
 export const PROJECT_HEADER = 'x-cairn-project'
 export const REMOTE_HEADER = 'x-cairn-remote'
@@ -62,7 +63,6 @@ export interface BrainHttp {
   auth: Authenticator
 }
 
-const SERVER_VERSION = '0.1.0'
 const PAYLOAD_LIMIT = 16_384
 const CAPTURE_PARSE_LIMIT = 512 * 1024
 

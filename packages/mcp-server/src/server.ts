@@ -2,9 +2,10 @@ import type { Brain } from '@agentcairn/core'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { BrainContext, type Scope } from './context.js'
 import { SERVER_INSTRUCTIONS, registerTools } from './tools.js'
+import { SERVER_VERSION } from './version.js'
 
 export const SERVER_NAME = 'cairn'
-export const SERVER_VERSION = '0.1.0'
+export { SERVER_VERSION }
 
 /** `scope` may be a folder (stdio mode) or a client-supplied project hint (remote mode). */
 export function createBrainServer(

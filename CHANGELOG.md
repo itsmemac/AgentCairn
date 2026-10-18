@@ -4,6 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+- The version shown in the dashboard and reported over MCP now comes from the package, instead of a hardcoded `0.1.0`.
 - Projects can be deleted from the dashboard (project page → Delete, after typing its name). It removes the project, its memories, areas and registered git remotes.
 
 ## [0.1.4] - 2026-10-18
