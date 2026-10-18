@@ -25,6 +25,9 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
   const remoteA = `https://example.com/${run}/app.git`
   const idA = `git-${remoteHash(normalizeRemoteUrl(remoteA)!)}`
   const named = `${run}-named`
+  const registeredRemote = `https://example.com/${run}/registered.git`
+  const forcedRemote = `https://example.com/${run}/forced.git`
+  const projectOf = (remote: string) => `git-${remoteHash(normalizeRemoteUrl(remote)!)}`
   const dirs: string[] = []
   const emptyHome = mkdtempSync(join(tmpdir(), 'cairn-home-'))
   dirs.push(emptyHome)
@@ -82,7 +85,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
 
   afterAll(async () => {
     server.kill()
-    const ids = [idA, named]
+    const ids = [idA, named, projectOf(registeredRemote), projectOf(forcedRemote)]
     await brain.run('MATCH (n) WHERE n.projectId IN $ids DETACH DELETE n', { ids })
     await brain.run('MATCH (p:Project) WHERE p.id IN $ids DETACH DELETE p', { ids })
     await brain.run('MATCH (r:Remote) WHERE NOT (r)-[:BELONGS_TO]->() DETACH DELETE r')
@@ -142,14 +145,14 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     writeFileSync(join(home, '.claude.json'), JSON.stringify({ mcpServers: { cairn: { type: 'stdio', env: { CAIRN_URL: url, CAIRN_TOKEN: token } } } }))
     const withHome = env({ HOME: home, USERPROFILE: home })
 
-    const skipped = repo(`https://example.com/${run}/registered.git`)
+    const skipped = repo(registeredRemote)
     const r = brainCli(skipped, ['init'], { env: withHome })
     expect(r.code).toBe(0)
     expect(r.out).toContain('Skipped .mcp.json')
     expect(existsSync(join(skipped, '.mcp.json'))).toBe(false)
     expect(existsSync(join(skipped, '.cairn.json'))).toBe(true)
 
-    const forced = repo(`https://example.com/${run}/forced.git`)
+    const forced = repo(forcedRemote)
     expect(brainCli(forced, ['init', '--mcp-json'], { env: withHome }).code).toBe(0)
     expect(existsSync(join(forced, '.mcp.json'))).toBe(true)
   })
