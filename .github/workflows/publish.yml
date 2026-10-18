@@ -51,6 +51,8 @@ jobs:
 
       # core first: the server and the CLI depend on it. Already-published versions are skipped, so a failed run can be retried.
       - name: Publish
+        env:
+          NPM_CONFIG_LOGLEVEL: verbose
         run: |
           for dir in core mcp-server cli; do
             name=$(node -p "require('./packages/$dir/package.json').name")
