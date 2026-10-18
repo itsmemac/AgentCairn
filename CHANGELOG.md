@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [0.1.2] - 2026-10-18
 
+- The `agentcairn` README on npm now leads with the one-line install.
+
+## [0.1.1] - 2026-10-18
+
+- Published through npm trusted publishing (no stored token).
+
+## [0.1.0] - 2026-10-18
+
 First public version.
 
 ### Added
