@@ -80,7 +80,7 @@ By contributing you agree that your contributions are licensed under the [MIT Li
 
 ## Releasing
 
-Maintainers publish the three packages (`@agentcairn/core`, `@agentcairn/mcp-server`, `agentcairn`) to npm from CI. It needs an `NPM_TOKEN` repository secret with publish rights on the `agentcairn` npm organization.
+Maintainers publish the three packages (`@agentcairn/core`, `@agentcairn/mcp-server`, `agentcairn`) to npm from CI using [trusted publishing](https://docs.npmjs.com/trusted-publishers): each package on npm lists the `publish.yml` workflow of this repository as a trusted publisher, so no npm token is stored anywhere.
 
 ```bash
 node scripts/release.mjs 0.2.0                 # one version for all three packages
