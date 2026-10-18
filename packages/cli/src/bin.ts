@@ -17,6 +17,7 @@ Usage:
       --force-remote       Move this git remote from another project to this one
       --personal           Keep .cairn.json out of git (via .git/info/exclude)
       --local              Put hooks in .claude/settings.local.json
+      --mcp-json           Write .mcp.json even if the server is already registered for every project
       --no-claude          Only link the folder; skip .mcp.json, hooks and CLAUDE.md
   cairn doctor             Check the setup end to end
   cairn briefing           Print the briefing an agent would get
@@ -55,6 +56,7 @@ async function main(): Promise<number> {
           personal: { type: 'boolean', default: false },
           local: { type: 'boolean', default: false },
           'no-claude': { type: 'boolean', default: false },
+          'mcp-json': { type: 'boolean', default: false },
         },
       })
       await runInit(positionals[0], {
@@ -63,6 +65,7 @@ async function main(): Promise<number> {
         personal: values.personal,
         local: values.local,
         noClaude: values['no-claude'],
+        mcpJson: values['mcp-json'],
       }, cwd, print)
       return 0
     }

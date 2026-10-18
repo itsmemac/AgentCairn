@@ -27,6 +27,6 @@ cairn install-command      # add the /cairn slash command to Claude Code
 cairn mcp                  # the stdio bridge used above
 ```
 
-`cairn init` writes `.cairn.json`, a `.mcp.json` server entry (no secrets: the address and token come from your environment), Claude Code hooks and a short `CLAUDE.md` block. The hooks inject the briefing at session start, remind the agent to checkpoint after substantial work, and stamp memories with the commit and author. Set `CAIRN_URL` and `CAIRN_TOKEN` in your environment for the hooks to reach the server.
+`cairn init` writes `.cairn.json`, a `.mcp.json` server entry (only when the server is not already registered for every project; no secrets, the address and token come from your environment), Claude Code hooks and a short `CLAUDE.md` block. The hooks inject the briefing at session start, remind the agent to checkpoint after substantial work, and stamp memories with the commit and author. Set `CAIRN_URL` and `CAIRN_TOKEN` in your environment for the hooks to reach the server.
 
 Everything here runs on your machine, because the server cannot see your repository. See [Using it with Claude Code](https://github.com/itsmemac/agentcairn/blob/main/docs/claude-code.md). MIT licensed.

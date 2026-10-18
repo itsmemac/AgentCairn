@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { writeLink } from '@agentcairn/core'
-import { ClientError, ServerClient, loadClientConfig } from '../client.js'
+import { ClientError, ServerClient, claudeRegistration, loadClientConfig } from '../client.js'
 import { mergeHooks, mergeMcpConfig, upsertClaudeMd } from '../claude.js'
 import { installCommand } from './installCommand.js'
 import { excludeLinkFile, hintOf, readLocalProject } from '../project.js'
@@ -14,6 +14,8 @@ export interface InitFlags {
   personal: boolean
   noClaude: boolean
   local: boolean
+  /** Write .mcp.json even though the server is already registered for every project. */
+  mcpJson?: boolean
 }
 
 const read = (file: string) => readFile(file, 'utf8').catch(() => null)
@@ -83,8 +85,14 @@ export async function runInit(projectIdArg: string | undefined, flags: InitFlags
 
   const identity = { projectId: result.projectId }
   const mcpFile = join(local.dir, '.mcp.json')
-  await write(mcpFile, mergeMcpConfig(await read(mcpFile), identity))
-  out(`Wrote ${mcpFile} (server entry; URL and token come from CAIRN_URL and CAIRN_TOKEN)`)
+  if (claudeRegistration().url && !flags.mcpJson) {
+    // A project .mcp.json named "cairn" would shadow the user-level server and needs CAIRN_URL and
+    // CAIRN_TOKEN in the OS environment, which a one-line install does not set.
+    out('Skipped .mcp.json: the cairn server is already registered for every project (claude mcp add --scope user). Use --mcp-json to commit one for your team.')
+  } else {
+    await write(mcpFile, mergeMcpConfig(await read(mcpFile), identity))
+    out(`Wrote ${mcpFile} (server entry; URL and token come from CAIRN_URL and CAIRN_TOKEN)`)
+  }
 
   const cli = cliCommand()
   const settingsFile = join(local.dir, '.claude', flags.local || cli.isMachineSpecific ? 'settings.local.json' : 'settings.json')

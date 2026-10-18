@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## [Unreleased]
+
+- `cairn init` no longer writes a project `.mcp.json` when the server is already registered with `claude mcp add --scope user` (it would shadow that entry and need environment variables); `--mcp-json` writes it anyway.
+
 ## [0.1.3] - 2026-10-18
 
 - `cairn init`, `doctor` and the hooks use the address and token given to `claude mcp add`, so the one-line install is enough.

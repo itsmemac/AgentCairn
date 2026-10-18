@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { checkStaleness } from '@agentcairn/core'
-import { ClientError, ServerClient, loadClientConfig } from '../client.js'
+import { ClientError, ServerClient, claudeRegistration, loadClientConfig } from '../client.js'
 import { hasClaudeMdBlock, inspectHooks, inspectMcpConfig } from '../claude.js'
 import { hintOf, readLocalProject } from '../project.js'
 
@@ -99,7 +99,13 @@ async function claudeChecks(local: Awaited<ReturnType<typeof readLocalProject>>)
   )
 
   const mcp = inspectMcpConfig(await read(join(local.dir, '.mcp.json')))
-  if (!mcp.present) checks.push(warn('.mcp.json has no cairn server', 'Run `cairn init`.'))
+  if (!mcp.present) {
+    checks.push(
+      claudeRegistration().url
+        ? ok('The cairn server is registered with Claude Code for every project')
+        : warn('.mcp.json has no cairn server', 'Run `cairn init`, or register it once with `claude mcp add cairn --scope user ...`.'),
+    )
+  }
   else if (local.projectId && mcp.projectId && mcp.projectId !== local.projectId) {
     checks.push(fail(`.mcp.json uses project "${mcp.projectId}" but .cairn.json says "${local.projectId}"`, 'Run `cairn init` again to realign them.'))
   } else checks.push(ok('.mcp.json has the cairn server'))

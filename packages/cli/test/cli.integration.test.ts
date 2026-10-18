@@ -26,6 +26,8 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
   const idA = `git-${remoteHash(normalizeRemoteUrl(remoteA)!)}`
   const named = `${run}-named`
   const dirs: string[] = []
+  const emptyHome = mkdtempSync(join(tmpdir(), 'cairn-home-'))
+  dirs.push(emptyHome)
   let brain: Brain
   let server: ChildProcess
 
@@ -34,6 +36,9 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     CAIRN_URL: url,
     CAIRN_TOKEN: token,
     CAIRN_HOOK_TIMEOUT_MS: '4000',
+    // an empty home, so the developer's own Claude Code registration cannot change what init writes
+    HOME: emptyHome,
+    USERPROFILE: emptyHome,
     ...extra,
   }) as NodeJS.ProcessEnv
 
@@ -129,6 +134,24 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     const settings = JSON.parse(readFileSync(join(a, '.claude', 'settings.local.json'), 'utf8'))
     expect(Object.keys(settings.hooks).sort()).toEqual(['PreToolUse', 'SessionStart', 'Stop'])
     expect(readFileSync(join(a, 'CLAUDE.md'), 'utf8')).toContain('cairn_checkpoint')
+  })
+
+  it('init skips .mcp.json when the server is registered for every project, unless asked', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cairn-home-'))
+    dirs.push(home)
+    writeFileSync(join(home, '.claude.json'), JSON.stringify({ mcpServers: { cairn: { type: 'stdio', env: { CAIRN_URL: url, CAIRN_TOKEN: token } } } }))
+    const withHome = env({ HOME: home, USERPROFILE: home })
+
+    const skipped = repo(`https://example.com/${run}/registered.git`)
+    const r = brainCli(skipped, ['init'], { env: withHome })
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('Skipped .mcp.json')
+    expect(existsSync(join(skipped, '.mcp.json'))).toBe(false)
+    expect(existsSync(join(skipped, '.cairn.json'))).toBe(true)
+
+    const forced = repo(`https://example.com/${run}/forced.git`)
+    expect(brainCli(forced, ['init', '--mcp-json'], { env: withHome }).code).toBe(0)
+    expect(existsSync(join(forced, '.mcp.json'))).toBe(true)
   })
 
   it('init is idempotent', () => {

@@ -90,7 +90,7 @@ cairn doctor             # check the whole setup
 | File | Purpose | Commit it? |
 | --- | --- | --- |
 | `.cairn.json` | Links the folder to a project id | Yes (or use `--personal` to keep it out of git) |
-| `.mcp.json` | The server entry from Option 2 | Yes |
+| `.mcp.json` | The server entry from Option 2. Skipped when you already ran the one-line install (Option 0), because a project entry would shadow it; pass `--mcp-json` to write it anyway | Yes |
 | `.claude/settings.json` | The three hooks below | Yes |
 | `.claude/settings.local.json` | The hooks, when the CLI runs from a source checkout (the command contains a machine-specific path) | No |
 | `CLAUDE.md` | A short marked block telling the agent how to use Agent Cairn | Yes |
