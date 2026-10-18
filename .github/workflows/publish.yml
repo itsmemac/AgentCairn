@@ -34,7 +34,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
       - run: npm ci
 
       # Trusted publishing needs npm 11.5.1 or newer; the runner's Node ships an older one.
