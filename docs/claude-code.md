@@ -47,7 +47,7 @@ Commit this at the repository root so every contributor gets the server automati
 
 The address and token come from each person's environment, so no secret is committed. Set `CAIRN_URL` (for example `http://localhost:8787`, no trailing slash) and `CAIRN_TOKEN` **in the operating system environment where Claude Code runs**. Claude Code does not read `.env` files for this. On Windows, `setx` only affects programs started afterwards, so fully quit and reopen the app; on macOS and Linux, export them in your shell profile (or the desktop session for GUI apps).
 
-## Option 3: the `cairn` CLI (recommended)
+## Option 3: the `cairn` CLI (adds hooks)
 
 The CLI does Option 2 for you and also installs hooks and a `CLAUDE.md` block, so the agent uses Agent Cairn without being asked.
 
@@ -60,7 +60,7 @@ cairn init my-project    # or by an explicit id
 cairn doctor             # check the whole setup
 ```
 
-> The npm packages are not published yet. Build the CLI from source (`npm install && npm run build` in a clone of this repository) and run `node packages/cli/dist/bin.js` in place of `brain`.
+> The CLI is on npm as [`agentcairn`](https://www.npmjs.com/package/agentcairn). Use `npx -y agentcairn <command>` in place of `cairn`, or `npm install -g agentcairn` to get the `cairn` command. To run from a source checkout instead, build it (`npm install && npm run build`) and use `node packages/cli/dist/bin.js`.
 
 `cairn init` writes, in the project folder:
 

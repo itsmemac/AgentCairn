@@ -55,7 +55,7 @@ That is the whole install. It works in every folder: the project comes from the 
 
 **4. Optional: hooks and an explicit project id.** The `cairn` CLI (`npx -y agentcairn`) links a folder to a project and installs Claude Code hooks that inject the briefing at session start and remind the agent to checkpoint. See [Using it with Claude Code](docs/claude-code.md).
 
-> The npm packages are not published yet. Until they are, build the CLI from source: `npm install && npm run build`, then run `node packages/cli/dist/bin.js`.
+> The CLI is on npm as [`agentcairn`](https://www.npmjs.com/package/agentcairn). Run it with `npx -y agentcairn <command>`, or `npm install -g agentcairn` to get the `cairn` command.
 
 ## The dashboard
 
