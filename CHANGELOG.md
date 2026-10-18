@@ -2,8 +2,10 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## [Unreleased]
+## [0.1.5] - 2026-10-18
 
+- The `/cairn` slash command now shows errors instead of only "Background command failed".
+- Docs: `cairn init <name> --create` for a new project, and how to replace an unnamed `git-…` project.
 - The version shown in the dashboard and reported over MCP now comes from the package, instead of a hardcoded `0.1.0`.
 - Projects can be deleted from the dashboard (project page → Delete, after typing its name). It removes the project, its memories, areas and registered git remotes.
 
