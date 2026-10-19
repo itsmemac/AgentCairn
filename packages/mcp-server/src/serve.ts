@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { countAdmins, ensureSchema, hasDefaultCredentials, loadConfig, loadEnvironment, openBrain } from '@agentcairn/core'
+import { countAdmins, ensureSchema, resetAdmins, hasDefaultCredentials, loadConfig, loadEnvironment, openBrain } from '@agentcairn/core'
 import { createBrainHttp } from './http.js'
 import { setupBanner } from './security.js'
 
@@ -36,9 +36,9 @@ async function main(): Promise<void> {
     try {
       await ensureSchema(brain)
       if (env.CAIRN_RESET_ADMIN === '1') {
-        await brain.run('MATCH (a:Admin) DETACH DELETE a')
+        const removed = await resetAdmins(brain)
         await brain.run("MATCH (m:BrainMeta {id: 'setup'}) DELETE m")
-        log('CAIRN_RESET_ADMIN=1: all dashboard accounts were removed. Unset it after this start.')
+        log(`CAIRN_RESET_ADMIN=1: ${removed} admin account(s) and their tokens were removed. Unset it after this start.`)
       }
       log('schema ready')
       if ((await countAdmins(brain)) === 0 && !setup.isOpen) console.error(`\n${setupBanner(setup.open(), port)}\n`)

@@ -167,6 +167,26 @@ export async function createUser(brain: Brain, input: { username: string; passwo
   }
 }
 
+/**
+ * Recovery for a lost admin login: removes admin accounts (all of them, or only `usernames`) and
+ * revokes the tokens they created. Projects they owned have no owner afterwards and are adopted by the
+ * next admin (the migration does that at the next startup, or when the new admin is created).
+ * Members are untouched. Returns how many accounts were removed.
+ */
+export async function resetAdmins(brain: Brain, options: { usernames?: string[] } = {}): Promise<number> {
+  const names = options.usernames?.map(n => n.toLowerCase()) ?? null
+  const found = await brain.run(
+    `MATCH ${ACCOUNT} AND coalesce(a.role, 'admin') = 'admin' AND ($names IS NULL OR a.username IN $names)
+     RETURN collect(a.username) AS names`,
+    { names },
+  )
+  const admins = (found.records[0]?.get('names') as string[] | undefined) ?? []
+  if (admins.length === 0) return 0
+  await brain.run('MATCH (t:ApiToken) WHERE t.createdBy IN $admins AND t.revokedAt IS NULL SET t.revokedAt = datetime()', { admins })
+  await brain.run(`MATCH ${ACCOUNT} AND a.username IN $admins DETACH DELETE a`, { admins })
+  return admins.length
+}
+
 /** Disables or re-enables an account. The last active admin cannot be disabled. */
 export async function setUserStatus(brain: Brain, id: string, status: 'active' | 'disabled'): Promise<boolean> {
   if (status === 'disabled') {

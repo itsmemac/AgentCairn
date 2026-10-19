@@ -50,6 +50,10 @@ claude mcp add cairn --scope user -e CAIRN_URL=http://<server-ip>:8787 -e CAIRN_
 
 See [Using it with Claude Code](claude-code.md) for hooks and the CLI.
 
+## Updating
+
+When a new image is published, open the Docker tab and **Force update** the `cairn` container. Your Neo4j data and the container's settings stay as they are, and the schema upgrades itself on start.
+
 ## Notes
 
 - Back up the Neo4j appdata folder (or use `neo4j-admin database dump`) as part of your normal Unraid backups.

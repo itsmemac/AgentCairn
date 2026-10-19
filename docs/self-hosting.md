@@ -53,17 +53,17 @@ While no admin exists the server prints a one-time code in its log:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-Open `http://<server>:8787/ui/`, enter the code and choose a username and password (at least 10 characters). The code lives only in memory: it stops working as soon as the account exists, and restarting before that prints a new one.
+Open `http://<server>:8787/ui/`, enter the code and choose a username and password (at least 10 characters). This first account is the **admin**, and it owns every project that already exists, so upgrading a server that was running before users existed keeps all its data. The code lives only in memory: it stops working as soon as the account exists, and restarting before that prints a new one.
 
 > Use `http://`, not `https://`, unless you have put a TLS-terminating proxy in front. The server itself speaks plain HTTP, so pointing a browser at `https://` simply fails to connect.
 
-**Locked out?** Start the container once with `CAIRN_RESET_ADMIN=1`. It removes the dashboard accounts and prints a fresh setup code. Unset the variable afterwards. Anyone who can set the container's environment can already do this, so it is not a new way in.
+**Locked out?** Start the container once with `CAIRN_RESET_ADMIN=1`. It removes the admin accounts and the tokens they created, and prints a fresh setup code. The projects they owned are adopted by the next admin you create, and other users are untouched. Unset the variable afterwards. Anyone who can set the container's environment can already do this, so it is not a new way in.
 
 ## Tokens and connecting agents
 
-Agents authenticate with bearer tokens created in the dashboard (**Access → Create token**). Tokens are stored as hashes and shown once. See [Using it with Claude Code](claude-code.md) for the client side.
+Agents authenticate with bearer tokens created in the dashboard (**Access → Create token**). Tokens are stored as hashes and shown once, and each acts as the user who created it. Create one per computer. See [Using it with Claude Code](claude-code.md) for the client side.
 
-With no tokens at all, agents are refused with a message pointing at the dashboard. `CAIRN_TOKEN` is an optional static token for scripts and bootstrap, and `CAIRN_NO_AUTH=1` disables authentication entirely (only on a network you fully trust).
+With no tokens at all, agents are refused with a message pointing at the dashboard. `CAIRN_TOKEN` is an optional static token for scripts and bootstrap (it acts as the first admin), and `CAIRN_NO_AUTH=1` disables authentication entirely (only on a network you fully trust).
 
 ## TLS and reverse proxies
 
@@ -91,7 +91,9 @@ docker compose pull
 docker compose up -d
 ```
 
-On startup the server creates any new schema and converts older data in place, then keeps running; the migrations are idempotent. Back up before upgrading anyway.
+On startup the server creates any new schema and converts older data in place, then keeps running; the migrations are idempotent. The upgrade that introduced users adds ownership to existing projects (the first admin owns them) and gives them names, without removing anything. Back up before upgrading anyway.
+
+If you run two server versions against one database for a while, that is fine: changes to the schema only add things, and the older version keeps working.
 
 ## Backups
 

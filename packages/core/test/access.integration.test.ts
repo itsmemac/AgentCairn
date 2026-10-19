@@ -25,12 +25,15 @@ import {
   listProjects,
   loadConfig,
   migrateUsers,
+  createApiToken,
+  findApiToken,
   openBrain,
   principalOf,
   projectExists,
   registerProject,
   remember,
   removeMembership,
+  resetAdmins,
   resolveProjectFromHint,
   roleAllows,
   setMembership,
@@ -258,6 +261,18 @@ describe.skipIf(!process.env.NEO4J_URI)('users, sharing and visibility against a
     expect(await countActiveUsers(brain)).toBe(before - 1)
     expect((await getUserById(brain, eve.id))?.status).toBe('disabled')
     await expect(createUser(brain, { username: names('EVE'), password })).rejects.toMatchObject({ code: 'exists' })
+  })
+
+  it('the admin reset removes the named admins and the tokens they made, and leaves members alone', async () => {
+    const lost = await createUser(brain, { username: names('lostadmin'), password, role: 'admin' })
+    const { token } = await createApiToken(brain, `${run}-lost`, lost.username)
+    expect(await findApiToken(brain, token)).toMatchObject({ user: { username: lost.username } })
+
+    expect(await resetAdmins(brain, { usernames: [lost.username] })).toBe(1)
+    expect(await getUserById(brain, lost.id)).toBeNull()
+    expect(await findApiToken(brain, token)).toBeNull() // revoked, not quietly handed to the next admin
+    expect((await getUserById(brain, alice.userId))?.status).toBe('active')
+    expect(await resetAdmins(brain, { usernames: [lost.username] })).toBe(0)
   })
 
   it('the migration upgrades the old shapes: Admin gains User, projects get names and an owner, remotes get keys', async () => {

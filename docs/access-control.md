@@ -68,6 +68,14 @@ Existing `:Admin` accounts are relabelled to also be `:User` (role `admin`). The
 4. Every remote becomes per-project (`key`).
 5. The old shared environment token maps to the first admin.
 
+## Recovery
+
+If the only admin login is lost, start the server once with `CAIRN_RESET_ADMIN=1`. It removes the admin accounts and the tokens they created and prints a new setup code. The projects they owned have no owner until the next admin is created, who then owns them. Members and their projects are not touched.
+
+## Upgrading
+
+Everything the migration does is additive, so an older server image keeps working against a migrated database. The first admin owns all existing projects. Nothing about a single-user setup changes.
+
 ## Rollout
 
 1. **Foundation (built):** users, memberships, generated project ids, per-project remote aliases, `authorize`, the migration, enforcement for MCP tools, the agent API and the dashboard (projects, memories, graph, tokens), a members API, admin-only Live/Query/System pages, and tests for every role against every action. There is no screen yet for adding users or sharing: that is the next two phases.

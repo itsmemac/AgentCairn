@@ -26,9 +26,9 @@ Set these on the server container (see [Self-hosting](self-hosting.md)). The ser
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `CAIRN_TOKEN` | none | Optional static bearer token, in addition to tokens created in the dashboard |
-| `CAIRN_NO_AUTH` | off | Set to `1` to disable authentication entirely. Trusted networks only. |
-| `CAIRN_RESET_ADMIN` | off | Set to `1` for one start to remove all dashboard accounts and print a new setup code |
+| `CAIRN_TOKEN` | none | Optional static bearer token for scripts and bootstrap. It acts as the first admin. Tokens created in the dashboard act as the user who created them. |
+| `CAIRN_NO_AUTH` | off | Set to `1` to disable authentication entirely: every request acts as the first admin. Trusted networks only. |
+| `CAIRN_RESET_ADMIN` | off | Set to `1` for one start to remove all admin accounts and the tokens they created, and print a new setup code. Projects they owned go to the next admin. Members are untouched. |
 
 ### Dashboard
 
@@ -68,7 +68,9 @@ Hook tuning (`CAIRN_BRIEFING_TOKENS`, `CAIRN_CHECKPOINT_MIN_EDITS`, `CAIRN_HOOK_
 | `/ui/` | none (the app signs in) | The dashboard |
 | `/admin/api/*` | session cookie | The dashboard's own API |
 
-Project identity for `/mcp` and `/api` comes from the `X-Cairn-Project` header (an id) or `X-Cairn-Remote` (a normalized git remote such as `github.com/acme/app`).
+Project identity for `/mcp` and `/api` comes from the `X-Cairn-Project` header (a project id, or a project name among the projects the token's user can access) or `X-Cairn-Remote` (a normalized git remote such as `github.com/acme/app`, matched among the user's own projects). A project the token's user cannot access answers as if it did not exist.
+
+A token acts as the user who created it, and every call is checked against that user's role on the project (see [access control](access-control.md)). A request to read or write a project without the needed role is refused with `404` (no access at all) or `403` (not enough role).
 
 ## MCP tools
 

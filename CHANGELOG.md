@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Users, private projects and roles.** Projects belong to the user who made them. Each has a generated id (`prj_…`) and a name; names may repeat. Roles on a project: viewer, editor, maintainer, owner. Tokens act as the user who created them, git-remote aliases are per project, and the old shared token acts as the first admin. A single user keeps working exactly as before. The Live, Query and System pages are admin-only. Existing data is migrated automatically. Design and rollout: `docs/access-control.md`. Screens for adding users and sharing come next.
 - A new project from a git remote is named after the repository, instead of `git-<hash>`.
 - Fixed: a project you cannot see no longer resolves to its real id.
+- `CAIRN_RESET_ADMIN` now removes every admin account and revokes the tokens they created (it used to remove only accounts with the old `Admin` label).
 
 ## [0.1.5] - 2026-10-18
 

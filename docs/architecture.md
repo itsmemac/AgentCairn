@@ -54,7 +54,7 @@ Memories are never edited in place. Changing a fact writes a new memory with `su
 
 ### Schema versions and migrations
 
-`ensureSchema` runs at startup and lazily on first use. It creates constraints and indexes (`IF NOT EXISTS`), converts older data shapes in place (idempotent, detected by shape, not by version number), and records the version. It uses only plain Cypher that works on Neo4j Community: no APOC, no enterprise features.
+`ensureSchema` runs at startup and lazily on first use. It creates constraints and indexes (`IF NOT EXISTS`), converts older data shapes in place (idempotent, detected by shape, not by version number), and records the version. Schema 4 added users, ownership and per-project remote aliases; it only adds to the database (the old `Admin` label stays on accounts, and nothing new is indexed on `Remote.hash`), so a previous server version keeps working against the same database. It uses only plain Cypher that works on Neo4j Community: no APOC, no enterprise features.
 
 ## Briefings
 
@@ -78,9 +78,11 @@ A memory records the commit it was written at and the paths it concerns. The CLI
 
 ## Security model
 
-- **Agents** authenticate with bearer tokens: hashed in Neo4j (shown once at creation), cached for 30 seconds, revocation takes effect immediately. A static `CAIRN_TOKEN` is optional. With no tokens configured, requests are refused.
+- **Agents** authenticate with bearer tokens: hashed in Neo4j (shown once at creation), cached for 30 seconds, revocation takes effect immediately. A token acts as the user who created it; a static `CAIRN_TOKEN` acts as the first admin. With no tokens configured, requests are refused.
 - **The dashboard** uses a signed-in session (a random id in an `HttpOnly`, `SameSite=Strict` cookie, held in memory, 12 hours). Login and setup-code guesses are rate limited, cross-origin writes are refused, and a strict Content-Security-Policy forbids inline scripts.
 - **The first admin** can only be created with a one-time code printed in the server log. The creation is serialized in the database so two simultaneous setups cannot both succeed.
+- **Access control** is one function, `authorize(principal, action, project)`, called by every MCP tool, API call and dashboard route, and it denies by default. A project the caller has no role on reads as "not found", so its existence does not leak; a project that cannot be seen resolves to a `pending:` placeholder that can never equal a real id. With one active user the server is in solo mode and the check is skipped. See [access control](access-control.md).
+- **Admin-only surfaces**: the request feed, the Cypher console (it reads everything) and the system page. An admin manages accounts; being an admin does not grant access to other people's projects.
 - **The Cypher console** is read-only twice over: a keyword screen, and the database runs the statement in a read transaction, which refuses writes whatever the text says.
 - **Privacy**: git remotes are stored as hashes, credentials in a remote are dropped client-side, and `Authorization` headers are never recorded.
 - **The request recorder** keeps the last 2,000 requests in memory only (summary only with `CAIRN_CAPTURE=meta`). Nothing is persisted.

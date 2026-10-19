@@ -27,7 +27,7 @@ An AI agent that opens your project cold has to read files, guess conventions an
 - **History is kept.** A changed fact *supersedes* the old one rather than overwriting it, so concurrent agents cannot clobber each other and the reasoning trail survives.
 - **One memory per project, across machines.** A project is identified by an explicit id or by its (normalized, hashed) git remote, so every clone resolves to the same memory.
 - **Private by default, shared on purpose.** Projects belong to the user who made them and can be shared with other users as viewer, editor or maintainer. See [Users, projects and access control](docs/access-control.md).
-- **You can see everything.** A built-in dashboard shows every request as it happens, the memory graph, and lets you manage access.
+- **You can see what happens.** A built-in dashboard shows every request as it happens (to admins), the memory graph, and your projects, and lets you manage access.
 
 ## Quick start
 
@@ -44,7 +44,7 @@ docker compose logs cairn               # the first start prints a one-time setu
 
 Already running Neo4j? Set `NEO4J_URI` in `.env` and run `docker compose up -d cairn` instead.
 
-**2. Create your admin account.** Open <http://localhost:8787/ui/>, enter the setup code from the log, choose a username and password.
+**2. Create your admin account.** Open <http://localhost:8787/ui/>, enter the setup code from the log, choose a username and password. With one user the server is in *solo mode*: everything is yours and there is nothing else to set up.
 
 **3. Connect Claude Code.** Do this on every computer that should use the memory.
 
@@ -89,13 +89,19 @@ More ways to connect, updating, uninstalling and troubleshooting are in [Using i
 
 ![Projects, in light mode](docs/images/projects-light.jpg)
 
-- **Live**: every request with its payload, latency and the memories it touched; throughput, per-tool latency, clients online.
-- **Projects** and **Graph**: browse, search and explore memories; follow supersede chains.
-- **Query**: a read-only Cypher console.
-- **Access**: create and revoke tokens, copy ready-made connection commands.
-- **System**: server and Neo4j health, graph size, security and capture settings.
+- **Live**: every request with its payload, latency and the memories it touched; throughput, per-tool latency, clients online. Admin only.
+- **Projects** and **Graph**: browse, search and explore the memories of the projects you can access; follow supersede chains. Create a project, or delete one you own.
+- **Query**: a read-only Cypher console. Admin only.
+- **Access**: create and revoke your tokens, copy ready-made connection commands. An admin also sees everyone's.
+- **System**: server and Neo4j health, graph size, security and capture settings. Admin only.
 
 Dark and light themes, phone-friendly. Request payloads are kept **in memory only** (the last 2,000) and `Authorization` headers are never recorded.
+
+## Users and sharing
+
+Projects are **private to the user who made them**. A project has a generated id (`prj_…`) and a name; names may repeat. An owner can share a project with other users as a **viewer** (reads), **editor** (reads and writes), or **maintainer** (also deletes memories and manages members). Agent tokens act as the user who created them and can never do more than that user can. Two people working in the same repository each get their own project unless one shares theirs.
+
+The model, the permission matrix and the rollout are in [Users, projects and access control](docs/access-control.md). Today the rules are enforced everywhere (MCP tools, the agent API, the dashboard) and the project members API works; the screens for inviting users and for sharing are the next step.
 
 ## What agents get
 
