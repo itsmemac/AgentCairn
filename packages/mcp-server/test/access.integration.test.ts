@@ -219,6 +219,95 @@ describe.skipIf(!process.env.NEO4J_URI)('users and sharing through the server', 
     expect(own.every(t => t.createdBy === names.bob)).toBe(true)
   })
 
+  it('handoffs, resume and session capture follow the same rules as everything else', async () => {
+    await brain.run('MATCH (:User {id: $id})-[m:MEMBER_OF]->(:Project {id: $p}) DELETE m', { id: ids.bob, p: aliceProject })
+    const asAlice = await connect('alice', { 'x-cairn-project': aliceProject })
+    try {
+      const handed = await call(asAlice, 'cairn_handoff', {
+        goal: 'Finish sharing',
+        status: 'in_progress',
+        in_progress: 'The members API works; the screen is not started',
+        next: ['Members panel', 'Invite page'],
+        dead_ends: ['Polling for changes: too chatty'],
+        from_user: 'Do not push without asking',
+        workspace: { branch: 'main', head: 'c'.repeat(40), dirty: ['ui.js'] },
+      })
+      expect(handed.isError).toBeUndefined()
+      expect(text(handed)).toContain('Handoff #')
+      const empty = await call(asAlice, 'cairn_handoff', { goal: 'Nothing to say' })
+      expect(empty.isError).toBe(true)
+      expect(text(empty)).toContain('A handoff needs at least one of')
+    } finally {
+      await asAlice.close()
+    }
+
+    // someone who cannot see the project learns nothing from resume
+    const stranger = await connect('bob', { 'x-cairn-project': aliceProject })
+    try {
+      expect(text(await call(stranger, 'cairn_resume'))).toContain('Nothing has been handed off yet')
+      expect((await call(stranger, 'cairn_handoff', { goal: 'x', next: ['y'] })).isError).toBe(true)
+    } finally {
+      await stranger.close()
+    }
+
+    // a viewer reads the whole handoff, but may not write one or record a session
+    await setMembership(brain, aliceProject, ids.bob, 'viewer')
+    const viewer = await connect('bob', { 'x-cairn-project': aliceProject })
+    const session = (token: string, body: unknown) =>
+      fetch(`${base}/api/session`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'x-cairn-project': aliceProject, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    try {
+      const resumed = text(await call(viewer, 'cairn_resume', { workspace: { branch: 'other', head: 'd'.repeat(40) } }))
+      expect(resumed).toContain('# Resume:')
+      expect(resumed).toContain('Members panel')
+      expect(resumed).toContain('Polling for changes: too chatty')
+      expect(resumed).toContain('Do not push without asking')
+      expect(resumed).toContain('git cat-file -t')
+      expect(resumed).toContain('not "other"') // the handoff is for branch main
+
+      const denied = await call(viewer, 'cairn_handoff', { goal: 'x', next: ['y'] })
+      expect(denied.isError).toBe(true)
+      expect(text(denied)).toContain('memory.write')
+      expect((await session(tokens.bob, { sessionId: 'viewer-session' })).status).toBe(403)
+    } finally {
+      await viewer.close()
+    }
+
+    // an editor's session is recorded, with secrets removed, and is visible to the viewer in the dashboard
+    await setMembership(brain, aliceProject, ids.bob, 'editor')
+    const ok = await session(tokens.bob, {
+      sessionId: `sess-${run}`,
+      machine: 'pc',
+      branch: 'main',
+      prompts: [{ text: 'Continue; the password is hunter2hunter2' }],
+      touched: ['a.ts'],
+    })
+    expect(ok.status).toBe(200)
+    expect((await session(tokens.bob, { sessionId: 'not valid!' })).status).toBe(400)
+
+    await setMembership(brain, aliceProject, ids.bob, 'viewer')
+    const cookie = await login('bob')
+    const listed = await (await dash(cookie, `projects/${aliceProject}/sessions`)).json()
+    const mine = listed.sessions.find((x: { id: string }) => x.id === `sess-${run}`)
+    expect(mine).toMatchObject({ machine: 'pc', touched: ['a.ts'] })
+    expect(JSON.stringify(mine)).not.toContain('hunter2hunter2')
+
+    // and a session is never recorded for a project the caller cannot see, or one nobody created
+    await brain.run('MATCH (:User {id: $id})-[m:MEMBER_OF]->(:Project {id: $p}) DELETE m', { id: ids.bob, p: aliceProject })
+    expect((await session(tokens.bob, { sessionId: 'x' })).status).toBe(404)
+    expect((await dash(await login('bob'), `projects/${aliceProject}/sessions`)).status).toBe(404)
+    const nobody = await fetch(`${base}/api/session`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${tokens.bob}`, 'x-cairn-remote': `example.com/${run}/never-registered`, 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'y' }),
+    })
+    expect(nobody.status).toBe(404)
+    expect((await findProjectByRemote(brain, remoteHash(`example.com/${run}/never-registered`))) ?? null).toBeNull()
+  })
+
   it('creating a project in the dashboard makes you its owner, and the same name is the same project', async () => {
     const bob = await login('bob')
     const made = await (await dash(bob, 'projects', { body: { name: `${run}-fresh` } })).json()

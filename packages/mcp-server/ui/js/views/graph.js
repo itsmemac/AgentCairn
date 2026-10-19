@@ -3,11 +3,11 @@ import { debounce, fmt, h, icon, KINDS, searchBox } from '../dom.js'
 import { live } from '../store.js'
 import { importance, openMemory } from './memoryDrawer.js'
 
-const KIND_VAR = { overview: '--s1', decision: '--s2', convention: '--s3', gotcha: '--s4', checkpoint: '--s5', thread: '--s6', glossary: '--s7' }
+const KIND_VAR = { handoff: '--s8', overview: '--s1', decision: '--s2', convention: '--s3', gotcha: '--s4', checkpoint: '--s5', thread: '--s6', glossary: '--s7' }
 // Seven kinds are more than hue alone can carry safely, so kind is also a shape.
-const KIND_SHAPE = { overview: 'star', decision: 'diamond', convention: 'round-rectangle', gotcha: 'triangle', checkpoint: 'ellipse', thread: 'round-tag', glossary: 'pentagon' }
-const KIND_GLYPH = { overview: '★', decision: '◆', convention: '▢', gotcha: '▲', checkpoint: '●', thread: '▰', glossary: '⬟' }
-const WRITE_TOOLS = new Set(['cairn_remember', 'cairn_checkpoint', 'cairn_forget'])
+const KIND_SHAPE = { handoff: 'octagon', overview: 'star', decision: 'diamond', convention: 'round-rectangle', gotcha: 'triangle', checkpoint: 'ellipse', thread: 'round-tag', glossary: 'pentagon' }
+const KIND_GLYPH = { handoff: '◼', overview: '★', decision: '◆', convention: '▢', gotcha: '▲', checkpoint: '●', thread: '▰', glossary: '⬟' }
+const WRITE_TOOLS = new Set(['cairn_remember', 'cairn_checkpoint', 'cairn_handoff', 'cairn_forget'])
 const LABEL_ZOOM = 1.15
 
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -46,15 +46,21 @@ function stylesheet() {
     { selector: '.dim', style: { opacity: 0.1 } },
     { selector: '.match', style: { 'border-width': 4, 'border-color': css('--warn-text'), label: 'data(label)' } },
     { selector: '.hidden', style: { display: 'none' } },
+    { selector: '.collapsed', style: { display: 'none' } },
+    { selector: 'node[type="project"].sized', style: { width: 'mapData(memories, 0, 60, 40, 100)', height: 'mapData(memories, 0, 60, 40, 100)', 'font-size': 12, 'text-max-width': 120 } },
+    { selector: 'node[type="project"].quiet', style: { 'border-color': muted, opacity: 0.78 } },
+    { selector: 'node[type="project"].away', style: { opacity: 0.3 } },
+    { selector: 'node[type="project"].open', style: { 'border-color': css('--s3'), 'underlay-opacity': 0.14, 'underlay-padding': 12 } },
     { selector: ':selected', style: { 'border-width': 4, 'border-color': accent, 'underlay-opacity': 0.22, 'underlay-padding': 9, label: 'data(label)' } },
   ]
 }
 
 /** Layouts that put the project at the root, then its areas, then their memories. */
-function layoutOptions(cy, name) {
+function layoutOptions(cy, name, overview = false) {
   const roots = cy.nodes('[type="project"]')
   switch (name) {
     case 'radial':
+      if (overview) return { name: 'concentric', concentric: n => n.data('memories') ?? 0, levelWidth: () => 25, minNodeSpacing: 70, spacingFactor: 1.2, avoidOverlap: true, padding: 40, animate: false }
       return { name: 'breadthfirst', roots, circle: true, directed: false, spacingFactor: 1.05, avoidOverlap: true, padding: 40, animate: false }
     case 'tree':
       return { name: 'breadthfirst', roots, circle: false, directed: false, spacingFactor: 1.15, avoidOverlap: true, padding: 40, animate: false }
@@ -66,6 +72,8 @@ function layoutOptions(cy, name) {
 }
 
 const LAYOUT_LABELS = { radial: 'Radial', tree: 'Tree', force: 'Force', grid: 'Grid' }
+const FEW_PROJECTS = 3 // up to this many, their areas are shown straight away
+const QUIET_AFTER_DAYS = 21
 
 export async function mount(container, { query, navigate }) {
   const [{ projects }] = await Promise.all([api('projects'), loadCytoscape()])
@@ -74,6 +82,9 @@ export async function mount(container, { query, navigate }) {
   let limit = 300
   let pulseOn = true
   let showSuperseded = true
+  let pinnedAreas = false // overview: keep every project's areas open
+  let showRemotes = false
+  const expanded = new Set()
   const hiddenKinds = new Set()
   let cy = null
   let refreshTimer = null
@@ -99,6 +110,21 @@ export async function mount(container, { query, navigate }) {
   const pulseBtn = h('button', { class: 'chip', type: 'button', 'aria-pressed': 'true', title: 'Flash nodes when an agent reads or writes them' }, icon('zap'), 'Live pulse')
   pulseBtn.addEventListener('click', () => { pulseOn = !pulseOn; pulseBtn.setAttribute('aria-pressed', String(pulseOn)) })
 
+  const areasBtn = h('button', { class: 'chip', type: 'button', 'aria-pressed': 'false', title: 'Open every project to show its areas' }, 'Areas')
+  areasBtn.addEventListener('click', () => {
+    pinnedAreas = !pinnedAreas
+    areasBtn.setAttribute('aria-pressed', String(pinnedAreas))
+    pinnedAreas ? expandAll() : collapseAll()
+    fit()
+  })
+  const remotesBtn = h('button', { class: 'chip', type: 'button', 'aria-pressed': 'false', title: 'Show the git remotes that map to each project' }, 'Git remotes')
+  remotesBtn.addEventListener('click', () => {
+    showRemotes = !showRemotes
+    remotesBtn.setAttribute('aria-pressed', String(showRemotes))
+    cy?.nodes('[type="remote"]').toggleClass('collapsed', !showRemotes)
+    hud()
+  })
+
   const supBtn = h('button', { class: 'chip', type: 'button', 'aria-pressed': 'true', title: 'Show memories that were replaced' }, 'Superseded')
   supBtn.addEventListener('click', () => { showSuperseded = !showSuperseded; supBtn.setAttribute('aria-pressed', String(showSuperseded)); applyFilters() })
 
@@ -123,9 +149,9 @@ export async function mount(container, { query, navigate }) {
   container.append(
     h('div', { class: 'graph-page' },
       h('div', { class: 'page-head', style: { marginBottom: '14px' } },
-        h('div', null, h('h1', null, 'Graph'), h('div', { class: 'sub' }, project ? `The memory tree of ${project}: project, its areas, and the memories filed under each.` : 'Every project, with its areas and git remotes. Pick a project to see its memories.')),
+        h('div', null, h('h1', null, 'Graph'), h('div', { class: 'sub' }, project ? `The memory tree of ${project}: project, its areas, and the memories filed under each.` : 'Every project, sized by how much it remembers. Click one to open its areas; double-click to explore its memories.')),
       ),
-      h('div', { class: 'toolbar' }, projectSelect, layoutSeg, project && limitSelect, h('span', { class: 'grow' }), search.el, pulseBtn, project && supBtn),
+      h('div', { class: 'toolbar' }, projectSelect, layoutSeg, project && limitSelect, h('span', { class: 'grow' }), search.el, !project && areasBtn, !project && remotesBtn, pulseBtn, project && supBtn),
       h('div', { class: 'graph-layout' },
         h('div', { class: 'canvas-wrap' }, canvas, kindChips.length > 0 && h('div', { class: 'canvas-overlay tl' }, ...kindChips), controls, hudEl),
         side,
@@ -139,7 +165,9 @@ export async function mount(container, { query, navigate }) {
 
   function runLayout(doFit) {
     if (!cy) return
-    const layout = cy.layout(layoutOptions(cy, layoutName))
+    const overview = !project
+    const eles = overview ? cy.nodes('[type="project"]') : cy.elements()
+    const layout = eles.layout(layoutOptions(cy, layoutName, overview))
     if (doFit) layout.one('layoutstop', fit)
     layout.run()
   }
@@ -147,12 +175,69 @@ export async function mount(container, { query, navigate }) {
     cy?.animate({ fit: { eles: cy.elements(':visible'), padding: 48 } }, { duration: 260 })
   }
   function hud() {
-    if (cy) hudEl.textContent = `${cy.nodes().length} nodes · ${cy.edges().length} edges · ${cy.zoom().toFixed(2)}×`
+    if (!cy) return
+    // what is drawn: folded-away and filtered nodes are not counted
+    const shown = n => !n.is('.collapsed, .hidden')
+    const nodes = cy.nodes().filter(shown).length
+    const edges = cy.edges().filter(e => shown(e.source()) && shown(e.target())).length
+    hudEl.textContent = `${nodes} nodes · ${edges} edges · ${cy.zoom().toFixed(2)}×`
   }
   function syncLabels() {
     if (!cy) return
     const show = cy.zoom() >= LABEL_ZOOM
     cy.nodes('[type="memory"]').toggleClass('lbl', show)
+  }
+
+  /** The areas of a project fan out around it; everything else stays put. */
+  function expand(node, animate = true) {
+    if (node.data('type') !== 'project') return
+    const areas = node.outgoers('node[type="area"]')
+    const center = node.position()
+    const radius = 64 + areas.length * 7
+    areas.forEach((a, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(areas.length, 1) - Math.PI / 2
+      const spot = { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }
+      a.removeClass('collapsed')
+      if (animate) {
+        a.position(center)
+        a.animate({ position: spot }, { duration: 240, easing: 'ease-out' })
+      } else a.position(spot)
+    })
+    node.addClass('open')
+    expanded.add(node.id())
+    hud()
+  }
+  function collapse(node) {
+    node.outgoers('node[type="area"]').addClass('collapsed')
+    node.removeClass('open')
+    expanded.delete(node.id())
+    hud()
+  }
+  const expandAll = () => cy?.nodes('[type="project"]').forEach(n => expand(n, false))
+  const collapseAll = () => {
+    cy?.nodes('[type="project"]').forEach(collapse)
+    cy?.nodes('[type="project"]').removeClass('away')
+  }
+  function toggleExpand(node) {
+    if (pinnedAreas) return
+    const wasOpen = expanded.has(node.id())
+    collapseAll()
+    if (!wasOpen) {
+      expand(node)
+      // the rest step back while one is open
+      cy.nodes('[type="project"]').not(node).addClass('away')
+    }
+  }
+  /** Many projects at once is a lot to draw: start with just the projects, and let people open them. */
+  function prepareOverview() {
+    const cutoff = Date.now() - QUIET_AFTER_DAYS * 86_400_000
+    cy.nodes('[type="project"]').forEach(n => {
+      n.addClass('sized')
+      n.toggleClass('quiet', Date.parse(n.data('lastMemoryAt') ?? n.data('createdAt')) < cutoff)
+    })
+    cy.nodes('[type="area"]').addClass('collapsed')
+    cy.nodes('[type="remote"]').addClass('collapsed')
+    expanded.clear()
   }
 
   function applyFilters() {
@@ -187,12 +272,24 @@ export async function mount(container, { query, navigate }) {
     const graph = await api(`graph?${qs({ project, limit })}`)
     if (cy) cy.destroy()
     cy = window.cytoscape({ container: canvas, elements: [...graph.nodes.map(element), ...graph.edges.map(edgeEl)], style: stylesheet(), wheelSensitivity: 0.22, minZoom: 0.08, maxZoom: 4 })
+    if (!project) prepareOverview()
     runLayout(true)
+    if (!project && cy.nodes('[type="project"]').length <= FEW_PROJECTS) expandAll()
     applyFilters()
     hud()
 
-    cy.on('tap', 'node', e => select(e.target))
-    cy.on('tap', e => { if (e.target === cy) { cy.elements().removeClass('dim'); cy.elements().unselect(); drawSide(null, graph) } })
+    cy.on('tap', 'node', e => {
+      select(e.target)
+      if (!project && e.target.data('type') === 'project') toggleExpand(e.target)
+    })
+    cy.on('dbltap', 'node[type="project"]', e => { if (!project) navigate(`#/graph?project=${encodeURIComponent(e.target.data('mid'))}`) })
+    cy.on('tap', e => {
+      if (e.target !== cy) return
+      cy.elements().removeClass('dim')
+      cy.elements().unselect()
+      if (!project && !pinnedAreas) collapseAll()
+      drawSide(null, graph)
+    })
     cy.on('mouseover', 'node', e => {
       if (search.input.value.trim()) return
       const around = e.target.closedNeighborhood()
@@ -204,7 +301,16 @@ export async function mount(container, { query, navigate }) {
     cy.on('zoom', debounce(() => { syncLabels(); hud() }, 60))
 
     drawSide(null, graph)
-    if (query.focus) {
+    if (!project && query.focus) {
+      // a link like #/graph?focus=<project id> opens that project's areas
+      const target = cy.getElementById(`p:${query.focus}`)
+      if (target.nonempty()) {
+        select(target)
+        toggleExpand(target)
+        target.select()
+      }
+    }
+    if (project && query.focus) {
       const target = cy.nodes('[type="memory"]').filter(n => n.data('mid').startsWith(query.focus))
       if (target.nonempty()) {
         select(target[0])
@@ -277,16 +383,15 @@ export async function mount(container, { query, navigate }) {
           h('div', null, h('div', { class: 'eyebrow' }, project ? 'Project' : 'Overview'), h('h2', { style: { fontSize: '17px', marginTop: '4px' } }, project || 'All projects')),
           graph?.truncated && h('div', { class: 'callout warn' }, `Showing the ${limit} most important and recent memories. Raise the limit to see more.`),
           h('div', { class: 'row' }, ...Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => h('div', { class: 'stat', style: { marginRight: '14px' } }, h('b', null, fmt.int(n)), h('span', null, k === 'memory' ? 'memories' : `${k}${n === 1 ? '' : 's'}`)))),
-          h('p', { class: 'dim', style: { margin: 0 } }, 'Click a node to inspect it and double-click a memory to open it. Hover to follow its branch; zoom in to read memory titles.'),
+          h('p', { class: 'dim', style: { margin: 0 } }, project ? 'Click a node to inspect it and double-click a memory to open it. Hover to follow its branch; zoom in to read memory titles.' : 'Click a project to open its areas and double-click it to explore its memories. Bigger bubbles remember more; faded ones have been quiet for three weeks. Use Areas to open them all.'),
           h('h3', null, 'How to read it'),
           h('div', { class: 'legend-list' },
             h('div', null, h('span', { class: 'g' }, '◯'), 'project: the root'),
             h('div', null, h('span', { class: 'g' }, '⬢'), 'area: a branch of the project'),
-            ...KINDS.map(k => h('div', { class: `k-${k}` }, h('span', { class: 'g', style: { color: 'var(--k)' } }, KIND_GLYPH[k]), k)),
-            h('div', null, h('span', { class: 'g', style: { opacity: 0.45 } }, '◆'), 'faded, dashed: superseded'),
-            h('div', null, h('span', { class: 'g', style: { color: 'var(--s5)' } }, '⇢'), 'newer replaces older'),
+            ...(project ? KINDS.map(k => h('div', { class: `k-${k}` }, h('span', { class: 'g', style: { color: 'var(--k)' } }, KIND_GLYPH[k]), k)) : [h('div', null, h('span', { class: 'g', style: { opacity: 0.5 } }, '◯'), 'faded project: nothing new in three weeks')]),
+            ...(project ? [h('div', null, h('span', { class: 'g', style: { opacity: 0.45 } }, '◆'), 'faded, dashed: superseded'), h('div', null, h('span', { class: 'g', style: { color: 'var(--s5)' } }, '⇢'), 'newer replaces older')] : []),
           ),
-          h('p', { class: 'hint', style: { margin: 0 } }, 'Size is importance. With live pulse on, a node glows when an agent reads or writes it.'),
+          h('p', { class: 'hint', style: { margin: 0 } }, project ? 'Size is importance. With live pulse on, a node glows when an agent reads or writes it.' : 'Bubble size is how many memories a project holds. With live pulse on, a project glows when an agent reads or writes it.'),
         ),
       )
     }

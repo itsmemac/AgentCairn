@@ -172,7 +172,7 @@ textarea { font-family: var(--mono); font-size: 13px; width: 100%; resize: verti
 .badge svg { width: 11px; height: 11px; }
 .kind { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); font-weight: 520; }
 .kind::before { content: ""; width: 9px; height: 9px; border-radius: 3px; background: var(--k, var(--muted)); }
-.k-overview { --k: var(--s1); } .k-decision { --k: var(--s2); } .k-convention { --k: var(--s3); } .k-gotcha { --k: var(--s4); }
+.k-handoff { --k: var(--s8); } .k-overview { --k: var(--s1); } .k-decision { --k: var(--s2); } .k-convention { --k: var(--s3); } .k-gotcha { --k: var(--s4); }
 .k-checkpoint { --k: var(--s5); } .k-thread { --k: var(--s6); } .k-glossary { --k: var(--s7); }
 
 /* ===== data display ===== */
@@ -359,3 +359,22 @@ textarea { font-family: var(--mono); font-size: 13px; width: 100%; resize: verti
   .page-head { margin-bottom: 16px; }
   .toolbar { padding: 10px; }
 }
+
+/* handoff and sessions on the project page */
+.notes { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.5; }
+.notes-h { margin: 10px 0 0; font-size: 11.5px; font-weight: 640; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.notes-h:first-child { margin-top: 0; }
+.notes-p { margin: 0; color: var(--text-2); }
+.notes-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; color: var(--text); }
+.resume-card { border-left: 3px solid var(--s8); margin-bottom: 14px; }
+.resume-card details { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.resume-card summary { cursor: pointer; font-weight: 560; }
+.sessions { display: flex; flex-direction: column; margin-top: 4px; }
+.session { padding: 12px 0; border-top: 1px solid var(--border); }
+.session:first-child { border-top: 0; padding-top: 4px; }
+.session summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.session summary::-webkit-details-marker { display: none; }
+.session .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); font-size: 13px; }
+.session .detail { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.session .detail b { font-weight: 600; }
+.session .files { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }

@@ -44,11 +44,16 @@ Containment is a tree: **Project → Area → Memory**.
 | `Area` | `id` (`<project>:<name>`), `projectId`, `name`. Memories filed without an area go to `general`. |
 | `Memory` | `id`, `projectId`, `kind`, `title`, `body`, `importance` (1–5), `status` (`active`/`superseded`), `paths`, `commitSha`, `author`, `agent`, `machine`, `createdAt` |
 | `Remote` | `key` (`<project>:<hash>`), `hash`: a sha256 prefix of the normalized git remote, never the URL. One per project, so the same repository can map to different projects for different people |
+| `Session` | `key` (`<project>:<session id>`), `id`, `projectId`, `machine`, `agent`, `branch`, `head`, `dirty`, `touched`, `commits`, prompts and last reply (redacted and clipped), `updatedAt`. One per conversation, updated in place. `(Project)-[:HAS_SESSION]->(Session)` |
 | `User` | `id`, `username`, `passwordHash` (scrypt), `role` (`admin`/`member`), `status` (`active`/`disabled`). Accounts from before users also keep an `Admin` label for now |
 | `ApiToken` | `id`, `name`, `hash` (sha256), `prefix`, `createdAt`, `lastUsedAt`, `revokedAt` |
 | `BrainMeta` | One row (`id: 'schema'`) holding the schema version |
 
-Memory kinds: `overview`, `convention`, `gotcha`, `decision`, `checkpoint`, `thread`, `glossary`.
+Memory kinds: `overview`, `convention`, `gotcha`, `decision`, `checkpoint`, `thread`, `glossary`, `handoff`. A handoff has a `topic` (its branch by default); writing a new one supersedes the active handoff with the same topic.
+
+### Sessions and handoffs
+
+The server cannot see the repository or the conversation, so the client records them. Hooks on the user's machine read the Claude Code transcript and the git state and send a cumulative snapshot of the session to `POST /api/session` after each prompt and turn. Snapshots are idempotent (the same session is updated in place, and a thinner snapshot never erases what was recorded earlier) and never create a project. The briefing opens with the latest handoffs and sessions, and returns `resume` metadata so the client's SessionStart hook can compare this clone with where the work stopped.
 
 Memories are never edited in place. Changing a fact writes a new memory with `supersedes`, which marks the old one `superseded` and links them in one transaction. The transaction fails as a whole if any id is missing, belongs to another project or is already superseded, and a lock taken before the status is read means two concurrent writers cannot both supersede the same memory.
 

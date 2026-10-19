@@ -208,7 +208,43 @@ export function debounce(fn, ms) {
   }
 }
 
-export const KINDS = ['overview', 'decision', 'convention', 'gotcha', 'checkpoint', 'thread', 'glossary']
+export const KINDS = ['handoff', 'overview', 'decision', 'convention', 'gotcha', 'checkpoint', 'thread', 'glossary']
+
+/**
+ * Renders the small Markdown a handoff is written in (`## headings`, `- bullets`, `1. steps`) as elements.
+ * Text only goes in through textContent, never as HTML.
+ */
+export function renderNotes(body) {
+  const out = []
+  let list = null
+  const flush = () => {
+    if (list) out.push(list)
+    list = null
+  }
+  for (const raw of String(body).split('\n')) {
+    const line = raw.trimEnd()
+    if (!line.trim()) continue
+    const heading = /^##\s+(.*)$/.exec(line)
+    const bullet = /^-\s+(.*)$/.exec(line)
+    const step = /^\d+\.\s+(.*)$/.exec(line)
+    if (heading) {
+      flush()
+      out.push(h('h4', { class: 'notes-h' }, heading[1]))
+    } else if (bullet || step) {
+      const tag = step ? 'ol' : 'ul'
+      if (!list || list.tagName.toLowerCase() !== tag) {
+        flush()
+        list = h(tag, { class: 'notes-list' })
+      }
+      list.append(h('li', null, (bullet ?? step)[1]))
+    } else {
+      flush()
+      out.push(h('p', { class: 'notes-p' }, line))
+    }
+  }
+  flush()
+  return h('div', { class: 'notes' }, ...out)
+}
 
 export function kindLabel(kind) {
   return h('span', { class: `kind k-${kind}` }, kind)

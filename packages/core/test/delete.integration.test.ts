@@ -41,7 +41,7 @@ describe.skipIf(!process.env.NEO4J_URI)('deleting a project against a live Neo4j
     const survivor = await remember(brain, kept, { kind: 'decision', title: 'Stays', body: 'Belongs to another project.' })
     await attachRemote(brain, doomed, hash)
 
-    expect(await deleteProject(brain, doomed)).toEqual({ memories: 3, areas: 2, remotes: 1 })
+    expect(await deleteProject(brain, doomed)).toEqual({ memories: 3, areas: 2, remotes: 1, sessions: 0 })
 
     expect(await projectExists(brain, doomed)).toBe(false)
     expect(await findProjectByRemote(brain, hash)).toBeNull()

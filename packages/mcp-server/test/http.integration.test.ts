@@ -87,7 +87,7 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
     const client = await connect({ 'x-cairn-remote': remote })
     try {
       const { tools } = await client.listTools()
-      expect(tools).toHaveLength(7)
+      expect(tools).toHaveLength(9)
 
       expect(text(await call(client, 'cairn_briefing'))).toContain('(empty)')
       expect(await findProjectByRemote(brain, remoteHash(remote))).toBeNull()

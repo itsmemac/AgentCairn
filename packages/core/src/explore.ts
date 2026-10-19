@@ -177,10 +177,20 @@ export async function getGraph(brain: Brain, options: { projectId?: string; proj
   const where = 'WHERE ($projectId IS NULL OR p.id = $projectId) AND ($ids IS NULL OR p.id IN $ids)'
   const params = { projectId: options.projectId ?? null, ids: options.projectIds ?? null }
 
-  const projects = await brain.run(`MATCH (p:Project) ${where} RETURN p.id AS id, coalesce(p.name, p.id) AS name, toString(p.createdAt) AS createdAt`, params)
+  const projects = await brain.run(
+    `MATCH (p:Project) ${where}
+     OPTIONAL MATCH (m:Memory {projectId: p.id, status: 'active'})
+     RETURN p.id AS id, coalesce(p.name, p.id) AS name, toString(p.createdAt) AS createdAt, count(m) AS memories, toString(max(m.createdAt)) AS lastMemoryAt`,
+    params,
+  )
   for (const r of projects.records) {
     const id = r.get('id') as string
-    nodes.set(`p:${id}`, { id: `p:${id}`, type: 'project', label: r.get('name') as string, data: { id, createdAt: r.get('createdAt') } })
+    nodes.set(`p:${id}`, {
+      id: `p:${id}`,
+      type: 'project',
+      label: r.get('name') as string,
+      data: { id, createdAt: r.get('createdAt'), memories: Number(r.get('memories')), lastMemoryAt: (r.get('lastMemoryAt') as string | null) ?? null },
+    })
   }
 
   const areas = await brain.run(

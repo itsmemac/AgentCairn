@@ -1,5 +1,5 @@
 import { api, qs } from '../api.js'
-import { ago, debounce, emptyState, fmt, h, icon, KINDS, kindBar, searchBox, toast } from '../dom.js'
+import { ago, debounce, emptyState, fmt, h, icon, KINDS, kindBar, renderNotes, searchBox, toast } from '../dom.js'
 import { closeDrawer, openDrawer } from '../drawer.js'
 import { importance, openMemory } from './memoryDrawer.js'
 
@@ -41,8 +41,13 @@ function confirmDelete(id, detail, navigate) {
 
 export async function mount(container, { params, navigate }) {
   const id = params.id
-  const detail = await api(`projects/${encodeURIComponent(id)}`)
-  const state = { kind: '', area: '', status: 'active', q: '' }
+  const [detail, handoffs, sessions] = await Promise.all([
+    api(`projects/${encodeURIComponent(id)}`),
+    api(`memories?${qs({ project: id, kind: 'handoff', sort: 'recent', limit: 3 })}`).then(r => r.memories, () => []),
+    api(`projects/${encodeURIComponent(id)}/sessions?limit=8`).then(r => r.sessions, () => []),
+  ])
+  // newest first by default: what was written last is usually what matters most when picking work up
+  const state = { kind: '', area: '', status: 'active', q: '', sort: 'recent' }
 
   const list = h('div', { class: 'stack', style: { gap: '10px' } })
   const count = h('span', { class: 'hint' })
@@ -71,6 +76,54 @@ export async function mount(container, { params, navigate }) {
     }),
   )
 
+  const sortSelect = h('select', { 'aria-label': 'Sort memories' },
+    h('option', { value: 'recent' }, 'Newest first'),
+    h('option', { value: 'oldest' }, 'Oldest first'),
+    h('option', { value: 'importance' }, 'Most important first'),
+  )
+  sortSelect.value = state.sort
+  sortSelect.addEventListener('change', () => { state.sort = sortSelect.value; load() })
+
+  /** The latest handoff, open; older ones folded. This is what the next agent is told first. */
+  function handoffCard() {
+    if (!handoffs.length) {
+      return h('div', { class: 'card resume-card' }, h('div', { class: 'row tight' }, h('span', { class: 'kind k-handoff' }, 'handoff')), h('p', { class: 'dim', style: { margin: '8px 0 0' } }, 'No handoff yet. When an agent stops with work unfinished it writes one with cairn_handoff: what is done, in progress and next, what is blocked, and what was tried and dropped. The next agent, on any machine, starts from it.'))
+    }
+    const [latest, ...older] = handoffs
+    const head = m => h('div', { class: 'row tight' }, h('span', { class: 'kind k-handoff' }, 'handoff'), m.topic && h('span', { class: 'tag' }, m.topic), h('span', { class: 'muted' }, ago(m.createdAt), m.machine && ` · ${m.machine}`, m.author && ` · ${m.author}`))
+    return h('div', { class: 'card resume-card' },
+      h('div', { class: 'row' }, h('h2', { style: { fontSize: '15px' } }, 'Where we left off'), h('span', { class: 'grow' }), h('button', { class: 'btn sm', type: 'button', onclick: () => openMemory(id, latest.id, navigate) }, 'Open')),
+      h('div', { style: { margin: '8px 0 10px' } }, head(latest), h('div', { style: { fontWeight: 620, marginTop: '6px' } }, latest.title)),
+      renderNotes(latest.body),
+      ...older.map(m => h('details', null, h('summary', null, m.title, h('span', { class: 'muted' }, ` · ${m.topic ?? ''} · `, ago(m.createdAt))), h('div', { style: { marginTop: '8px' } }, renderNotes(m.body)))),
+    )
+  }
+
+  function sessionRow(x) {
+    const asked = x.prompts[0]?.text
+    return h('details', { class: 'session' },
+      h('summary', null,
+        h('div', { class: 'row tight' }, h('b', null, x.machine ?? 'unknown machine'), x.agent && h('span', { class: 'muted' }, `(${x.agent})`), x.branch && h('span', { class: 'tag' }, x.branch), x.head && h('span', { class: 'mono muted' }, x.head.slice(0, 7)), h('span', { class: 'grow' }), x.dirty.length > 0 && h('span', { class: 'badge auth', title: 'Files that were not committed when the session was last seen' }, `${x.dirty.length} uncommitted`), x.touched.length > 0 && h('span', { class: 'badge' }, `${x.touched.length} edited`), h('span', { class: 'muted' }, ago(x.updatedAt))),
+        asked && h('div', { class: 'clamp' }, asked),
+      ),
+      h('div', { class: 'detail' },
+        x.prompts.length > 0 && h('div', null, h('b', null, 'What the person asked'), h('ol', { class: 'notes-list' }, ...x.prompts.map(p => h('li', null, p.text)))),
+        x.lastReply && h('div', null, h('b', null, "The agent's last message"), h('p', { class: 'notes-p' }, x.lastReply)),
+        x.touched.length > 0 && h('div', null, h('b', null, 'Files edited'), h('div', { class: 'files' }, x.touched.join('  '))),
+        x.commits.length > 0 && h('div', null, h('b', null, 'Commits'), h('ul', { class: 'notes-list' }, ...x.commits.map(c => h('li', { class: 'mono' }, c)))),
+        x.dirty.length > 0 && h('div', null, h('b', null, 'Left uncommitted'), h('div', { class: 'files' }, x.dirty.join('  '))),
+      ),
+    )
+  }
+
+  function sessionsCard() {
+    if (!sessions.length) return null
+    return h('div', { class: 'card', style: { marginBottom: '14px' } },
+      h('div', { class: 'row' }, h('h2', { style: { fontSize: '15px' } }, 'Recent sessions'), h('span', { class: 'hint' }, 'recorded automatically as the work happens')),
+      h('div', { class: 'sessions' }, ...sessions.map(sessionRow)),
+    )
+  }
+
   function memoryRow(m) {
     return h(
       'div',
@@ -90,7 +143,7 @@ export async function mount(container, { params, navigate }) {
   async function load() {
     list.replaceChildren(...Array.from({ length: 3 }, () => h('div', { class: 'skeleton', style: { height: '86px', borderRadius: '12px' } })))
     try {
-      const { memories } = await api(`memories?${qs({ project: id, kind: state.kind, area: state.area, status: state.status, q: state.q, limit: 100 })}`)
+      const { memories } = await api(`memories?${qs({ project: id, kind: state.kind, area: state.area, status: state.status, q: state.q, sort: state.sort, limit: 100 })}`)
       count.textContent = `${memories.length}${memories.length === 100 ? '+' : ''} shown${state.q ? ' · ranked by relevance' : ''}`
       if (!memories.length) return list.replaceChildren(h('div', { class: 'card' }, emptyState('search', 'No memories match', 'Try another filter or clear the search.')))
       list.replaceChildren(...memories.map(memoryRow))
@@ -123,7 +176,9 @@ export async function mount(container, { params, navigate }) {
       ),
       kindBar(detail.counts),
     ),
-    h('div', { class: 'toolbar' }, search.el, areaSelect, statusSeg, h('span', { class: 'grow' }), count),
+    handoffCard(),
+    sessionsCard(),
+    h('div', { class: 'toolbar' }, search.el, areaSelect, sortSelect, statusSeg, h('span', { class: 'grow' }), count),
     h('div', { class: 'row tight', style: { marginBottom: '14px' } }, ...kindChips),
     list,
   )

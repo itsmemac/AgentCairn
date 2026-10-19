@@ -34,6 +34,7 @@ import {
   listApiTokens,
   listMembers,
   listProjects,
+  listSessions,
   listUsers,
   loadConfig,
   migrateUsers,
@@ -378,6 +379,13 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       }
     }
 
+    const sessionsMatch = /^projects\/([^/]+)\/sessions$/.exec(route)
+    if (sessionsMatch && method === 'GET') {
+      const id = decodeURIComponent(sessionsMatch[1]!)
+      await authorize(brain, principal, 'memory.read', id)
+      return send(res, 200, { sessions: await listSessions(brain, id, { limit: q.get('limit') ? Number(q.get('limit')) : 20 }) })
+    }
+
     if (route === 'users' && method === 'GET') {
       requireAdmin(principal)
       return send(res, 200, { users: (await listUsers(brain)).map(u => ({ id: u.id, username: u.username, role: u.role, status: u.status, createdAt: u.createdAt })) })
@@ -395,6 +403,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         kind: kind ?? undefined,
         area: q.get('area') ?? undefined,
         limit: q.get('limit') ? Number(q.get('limit')) : 50,
+        sort: q.get('sort') === 'recent' || q.get('sort') === 'oldest' ? (q.get('sort') as 'recent' | 'oldest') : undefined,
         includeSuperseded: status !== 'active',
       })
       return send(res, 200, { memories: status === 'superseded' ? found.filter(m => m.status === 'superseded') : found })

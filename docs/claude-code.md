@@ -120,15 +120,37 @@ In this order:
 
 An explicit name or id is never created implicitly (a typo would start an empty project); create it in the dashboard or with `cairn init <name> --create`. Projects are private to their owner; see [Users, projects and access control](access-control.md).
 
+## Handing work over
+
+The point of the tool is that another agent, on another machine or account, can pick up exactly where the last one stopped, without you explaining it all again, and even if the first machine is gone. Two things make that work.
+
+**Recorded automatically (the hooks, no effort from the agent).** As a session goes, the hooks keep a snapshot of it on the server: what you asked (the first request and the most recent ones), the agent's last message, the files it edited, the commits it made, the branch and commit it was on, and which files were still uncommitted. It is updated on every prompt, every turn, before the context is compacted and when the session ends, so what exists is whatever happened up to the last turn, even if the laptop dies mid-session.
+
+**Written by the agent (`cairn_handoff`).** The part only the agent that did the work can write: what is done, what is in progress and its exact state, what to do next in order, what is blocked or still a question, what was tried and dropped (so nobody repeats it), and what you asked that must keep being honoured. It replaces the previous handoff for the same topic (the branch by default), and the older ones are kept as history. The Stop hook asks for one when work was done but nothing was recorded.
+
+**Picking up.** A new session starts with a briefing that opens with **Where we left off** (the handoff) and **Recent sessions**, then a **Check before you continue** section, computed on your machine:
+
+- the last handoff was written at a commit this clone does not have, so it may never have been pushed;
+- how many commits have been made since;
+- the handoff is for another branch;
+- the previous session, on another machine, left uncommitted files that exist only there.
+
+`cairn_resume` (and `cairn resume` on the command line) gives the whole picture without a token budget: every handoff in full, each recent session in detail, the open threads, and the exact git commands to check the repository against where the work stopped.
+
+**What is stored, and your control over it.** Prompts and replies are run through a secret filter on your machine before they are sent (tokens, keys, passwords stated in a sentence, `user:pass@` in URLs, private keys) and again on the server, and are kept to a few hundred characters. It is best-effort, so it can miss things. Set `CAIRN_SESSION_CAPTURE` to `meta` to send only files, commits and repository state and never any words, or to `off` to send nothing. A session is only recorded for a folder that is already linked to a project: capture never creates one.
+
 ## The hooks
 
 The server cannot see your repository, so anything that depends on it happens on your machine:
 
 | Hook | What it does |
 | --- | --- |
-| **SessionStart** | Computes which memories are stale (the files they concern changed since they were written) and injects the briefing into the new session. |
-| **Stop** | After a turn with several file edits and no `cairn_checkpoint`, asks the agent to record a checkpoint before finishing. |
-| **PreToolUse** | Adds the current commit and git author to `cairn_remember` and `cairn_checkpoint` calls, and approves those two calls without a prompt. |
+| **SessionStart** | Computes which memories are stale (the files they concern changed since they were written), injects the briefing into the new session, and adds the repository check. |
+| **UserPromptSubmit** | Records the prompt and the state of the session as it is sent. |
+| **Stop** | Records the session after every turn. After a turn with several file edits and no `cairn_handoff` or `cairn_checkpoint`, asks the agent to write one before finishing. |
+| **PreCompact** | Records the session before the context is compacted. |
+| **SessionEnd** | Marks the end of the session. |
+| **PreToolUse** | Adds the current commit and git author to `cairn_remember`, `cairn_checkpoint` and `cairn_handoff`, adds the branch, commit and uncommitted files to `cairn_handoff` and `cairn_resume`, and approves those calls without a prompt. |
 
 Hooks never block a session: if the server is unreachable they stay silent. You can tune them with environment variables:
 
@@ -137,6 +159,8 @@ Hooks never block a session: if the server is unreachable they stay silent. You 
 | `CAIRN_BRIEFING_TOKENS` | `1200` | Token budget of the briefing injected at session start |
 | `CAIRN_CHECKPOINT_MIN_EDITS` | `3` | File edits in a turn before the Stop hook asks for a checkpoint |
 | `CAIRN_HOOK_TIMEOUT_MS` | `10000` | How long a hook waits for the server |
+| `CAIRN_SESSION_CAPTURE` | `full` | `full`, `meta` (files, commits and repository state only) or `off` |
+| `CAIRN_CAPTURE_TIMEOUT_MS` | `3000` | How long the capture hooks wait, so a slow server never holds up a prompt |
 
 ## Troubleshooting
 

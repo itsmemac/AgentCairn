@@ -64,7 +64,7 @@ Hook tuning (`CAIRN_BRIEFING_TOKENS`, `CAIRN_CHECKPOINT_MIN_EDITS`, `CAIRN_HOOK_
 | --- | --- | --- |
 | `GET /healthz` | none | `200` when Neo4j is reachable, `503` otherwise |
 | `POST /mcp` | bearer token | MCP over Streamable HTTP (stateless) |
-| `/api/*` | bearer token | JSON API used by the CLI and hooks: `GET /api/project`, `POST /api/init`, `GET /api/stale-inputs`, `POST /api/briefing`, `POST /api/remote` |
+| `/api/*` | bearer token | JSON API used by the CLI and hooks: `GET /api/project`, `POST /api/init`, `GET /api/stale-inputs`, `POST /api/briefing`, `POST /api/remote`, `POST /api/session` (record a session snapshot), `GET /api/sessions`, `POST /api/resume` |
 | `/ui/` | none (the app signs in) | The dashboard |
 | `/admin/api/*` | session cookie | The dashboard's own API |
 
@@ -77,11 +77,13 @@ A token acts as the user who created it, and every call is checked against that 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
 | `cairn_briefing` | `max_tokens?` (200–8000, default 1500) | Budgeted briefing; onboarding instructions for an empty project |
-| `cairn_recall` | `query?`, `kind?`, `area?`, `limit?`, `include_superseded?` | Fulltext search scoped to the project |
+| `cairn_recall` | `query?`, `kind?`, `area?`, `limit?`, `include_superseded?`, `sort?` | Fulltext search scoped to the project; `sort` (`importance`, `recent`, `oldest`) applies when not searching text |
 | `cairn_remember` | `kind`, `title`, `body`, `area?`, `paths?`, `importance?` (1–5), `supersedes?` | One fact per memory; ids may be the 8-character short form |
 | `cairn_checkpoint` | `goal`, `outcome`, `decisions?`, `next?`, `resolves?`, `area?`, `paths?` | Also files each decision and an open thread for `next` |
 | `cairn_areas` | none | Areas with memory counts |
 | `cairn_forget` | `id` | Deletes a memory; anything it replaced becomes active again |
+| `cairn_handoff` | `goal`, `status?`, `in_progress?`, `next?`, `blockers?`, `from_user?`, `dead_ends?`, `done?`, `verify?`, `decisions?`, `paths?`, `topic?` | Where the work stands, for whoever picks it up. Replaces the previous handoff for the same topic. |
+| `cairn_resume` | none | The latest handoffs in full, recent sessions, open threads and how to check the repository |
 | `cairn_status` | none | Connection, project and counts |
 
-`cairn_remember` and `cairn_checkpoint` also accept `commit_sha` and `author`, which the PreToolUse hook fills in. Memory kinds are `overview`, `decision`, `convention`, `gotcha`, `checkpoint`, `thread` and `glossary`.
+`cairn_remember` and `cairn_checkpoint` also accept `commit_sha` and `author`, which the PreToolUse hook fills in. Memory kinds are `overview`, `decision`, `convention`, `gotcha`, `checkpoint`, `thread`, `glossary` and `handoff` (written only by `cairn_handoff`).

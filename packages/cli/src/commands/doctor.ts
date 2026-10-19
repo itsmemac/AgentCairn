@@ -116,6 +116,9 @@ async function claudeChecks(local: Awaited<ReturnType<typeof readLocalProject>>)
   )
   const missing = [!hooks.sessionStart && 'session-start', !hooks.stop && 'stop', !hooks.preToolUse && 'pre-tool-use'].filter(Boolean)
   checks.push(missing.length ? warn(`Claude Code hooks missing: ${missing.join(', ')}`, 'Run `cairn init`.') : ok('Claude Code hooks installed'))
+  if (!missing.length) {
+    checks.push(hooks.capture ? ok('Session capture hooks installed') : warn('Session capture hooks missing: conversations are not being recorded for handoff', 'Run `cairn init` to add them.'))
+  }
 
   checks.push(
     hasClaudeMdBlock(await read(join(local.dir, 'CLAUDE.md')))

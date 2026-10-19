@@ -7,7 +7,7 @@
 export const MCP_NAME = 'cairn'
 export const MD_START = '<!-- cairn:start -->'
 export const MD_END = '<!-- cairn:end -->'
-const WRITE_TOOLS_MATCHER = `mcp__${MCP_NAME}__cairn_remember|mcp__${MCP_NAME}__cairn_checkpoint`
+const WRITE_TOOLS_MATCHER = ['remember', 'checkpoint', 'handoff', 'resume'].map(t => `mcp__${MCP_NAME}__cairn_${t}`).join('|')
 
 export class ConfigFileError extends Error {
   constructor(file: string, detail: string) {
@@ -83,12 +83,16 @@ const HOOKS = [
   { event: 'SessionStart', name: 'session-start', timeout: 20 },
   { event: 'Stop', name: 'stop', timeout: 10 },
   { event: 'PreToolUse', name: 'pre-tool-use', timeout: 10, matcher: WRITE_TOOLS_MATCHER },
+  // session capture: the conversation is recorded as it goes, so it survives a machine that dies mid-session
+  { event: 'UserPromptSubmit', name: 'user-prompt', timeout: 5 },
+  { event: 'PreCompact', name: 'pre-compact', timeout: 5 },
+  { event: 'SessionEnd', name: 'session-end', timeout: 5 },
 ] as const
 
 const isOurs = (command: unknown) =>
-  typeof command === 'string' && /cairn|bin.js/i.test(command) && / hook (session-start|stop|pre-tool-use)$/.test(command)
+  typeof command === 'string' && /cairn|bin.js/i.test(command) && / hook (session-start|stop|pre-tool-use|user-prompt|pre-compact|session-end)$/.test(command)
 
-/** Adds (or refreshes) Agent Cairn's three hooks without touching anyone else's. */
+/** Adds (or refreshes) Agent Cairn's hooks without touching anyone else's. */
 export function mergeHooks(existing: string | null, cli: string): string {
   const json = parseObject(existing, 'settings file')
   const hooks = { ...asObject(json.hooks) }
@@ -113,10 +117,13 @@ export interface HooksInspection {
   sessionStart: boolean
   stop: boolean
   preToolUse: boolean
+  /** The hooks that record the session as it goes. */
+  capture: boolean
 }
 
 export function inspectHooks(...files: (string | null)[]): HooksInspection {
-  const found = { sessionStart: false, stop: false, preToolUse: false }
+  const found = { sessionStart: false, stop: false, preToolUse: false, capture: false }
+  const captureSeen = { userPrompt: false, sessionEnd: false }
   const has = (hooks: Json, event: string, name: string) =>
     (Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : []).some(g =>
       (Array.isArray(asObject(g).hooks) ? (asObject(g).hooks as unknown[]) : []).some(h => {
@@ -130,10 +137,13 @@ export function inspectHooks(...files: (string | null)[]): HooksInspection {
       found.sessionStart ||= has(hooks, 'SessionStart', 'session-start')
       found.stop ||= has(hooks, 'Stop', 'stop')
       found.preToolUse ||= has(hooks, 'PreToolUse', 'pre-tool-use')
+      captureSeen.userPrompt ||= has(hooks, 'UserPromptSubmit', 'user-prompt')
+      captureSeen.sessionEnd ||= has(hooks, 'SessionEnd', 'session-end')
     } catch {
       // unreadable: counts as not installed
     }
   }
+  found.capture = captureSeen.userPrompt && captureSeen.sessionEnd
   return found
 }
 
@@ -174,6 +184,8 @@ export function claudeMdBlock(): string {
 This project keeps shared memory in Agent Cairn (the \`cairn\` MCP server).
 
 - Start of a session: use \`cairn_briefing\` before exploring the repo (a hook may already have injected it) and trust it over re-reading files.
+- Picking up work someone else started, or coming back after a break: call \`cairn_resume\` for the handoff and the recent sessions.
+- Stopping with work unfinished, or the person is leaving: call \`cairn_handoff\` (done, in progress, next, blocked, tried and dropped, what the person asked) so the next agent can carry on without being re-briefed.
 - After finishing a goal or process: call \`cairn_checkpoint\`.
 - Durable lessons (a decision and why, a convention, a trap): call \`cairn_remember\`; replace outdated ones with \`supersedes\`.
 - Look things up with \`cairn_recall\` instead of searching the repo for recorded context.

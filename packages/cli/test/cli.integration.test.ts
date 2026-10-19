@@ -8,6 +8,7 @@ import {
   deleteProject,
   loadConfig,
   openBrain,
+  recordHandoff,
   remember,
 } from '@agentcairn/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -142,7 +143,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     })
     expect(readFileSync(join(a, '.mcp.json'), 'utf8')).not.toContain(token)
     const settings = JSON.parse(readFileSync(join(a, '.claude', 'settings.local.json'), 'utf8'))
-    expect(Object.keys(settings.hooks).sort()).toEqual(['PreToolUse', 'SessionStart', 'Stop'])
+    expect(Object.keys(settings.hooks).sort()).toEqual(['PreCompact', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'])
     expect(readFileSync(join(a, 'CLAUDE.md'), 'utf8')).toContain('cairn_checkpoint')
   })
 
@@ -246,6 +247,72 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     const printed = brainCli(a, ['briefing', '--tokens', '400'])
     expect(printed.code).toBe(0)
     expect(printed.out).toContain('may be stale (changed: app.ts)')
+  })
+
+  it('records the session as it goes, and the next session is told where the work stopped', async () => {
+    const stamp = (n: number) => `2026-10-20T10:${String(n).padStart(2, '0')}:00.000Z`
+    const txDir = mkdtempSync(join(tmpdir(), 'cairn-cap-'))
+    dirs.push(txDir)
+    const transcript = join(txDir, `sess-${run}.jsonl`)
+    const entries = [
+      { type: 'user', timestamp: stamp(1), message: { role: 'user', content: 'Add the invite page. The new password is hunter2hunter2.' } },
+      { type: 'assistant', timestamp: stamp(2), message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Edit', input: { file_path: join(a, 'app.ts') } }] } },
+      { type: 'assistant', timestamp: stamp(3), message: { role: 'assistant', content: [{ type: 'text', text: 'Started the invite page; accept() is half written.' }] } },
+    ]
+    writeFileSync(transcript, entries.map(e => JSON.stringify(e)).join('\n'))
+    writeFileSync(join(a, 'wip.ts'), 'half done') // work that exists only in this working tree
+
+    const hookInput = { cwd: a, session_id: `sess-${run}`, transcript_path: transcript }
+    expect(brainCli(a, ['hook', 'user-prompt'], { input: JSON.stringify({ ...hookInput, prompt: 'Also let viewers accept' }) }).code).toBe(0)
+    // by the time the turn ends, the transcript holds that prompt too
+    writeFileSync(transcript, [...entries, { type: 'user', timestamp: stamp(4), message: { role: 'user', content: 'Also let viewers accept' } }].map(e => JSON.stringify(e)).join('\n'))
+    expect(brainCli(a, ['hook', 'stop'], { input: JSON.stringify(hookInput) }).code).toBe(0)
+
+    const sessions = (await (await fetch(`${url}/api/sessions`, { headers: { authorization: `Bearer ${token}`, 'x-cairn-project': idA } })).json()).sessions
+    const mine = sessions.find((x: { id: string }) => x.id === `sess-${run}`)
+    expect(mine).toMatchObject({ agent: 'claude-code', branch: git(a, 'rev-parse', '--abbrev-ref', 'HEAD'), touched: ['app.ts'], dirty: expect.arrayContaining(['wip.ts']), lastReply: 'Started the invite page; accept() is half written.' })
+    expect(mine.prompts.map((p: { text: string }) => p.text)).toEqual([expect.stringContaining('Add the invite page.'), 'Also let viewers accept'])
+    expect(JSON.stringify(mine)).not.toContain('hunter2hunter2')
+
+    // the machine could die here; the next session on another one is told what happened
+    const head = git(a, 'rev-parse', 'HEAD')
+    await recordHandoff(brain, idA, {
+      goal: 'Invite page',
+      inProgress: 'accept() is half written',
+      next: ['Finish accept()', 'Write its tests'],
+      deadEnds: ['A magic link in the URL hash is stripped by the proxy'],
+      topic: git(a, 'rev-parse', '--abbrev-ref', 'HEAD'),
+      commitSha: head,
+      machine: 'old-laptop',
+    })
+    const start = JSON.parse(brainCli(a, ['hook', 'session-start'], { input: JSON.stringify({ cwd: a }) }).out)
+    const context = start.hookSpecificOutput.additionalContext as string
+    expect(context).toContain('## Where we left off')
+    expect(context.indexOf('## Where we left off')).toBeLessThan(context.indexOf('## Recent sessions'))
+    expect(context).toContain('Finish accept()')
+    expect(context).toContain('A magic link in the URL hash is stripped by the proxy')
+    expect(context).toContain('Also let viewers accept')
+    expect(context).toContain('## Check before you continue')
+    expect(context).toContain('uncommitted file')
+
+    const resumed = brainCli(a, ['resume'])
+    expect(resumed.code).toBe(0)
+    expect(resumed.out).toContain('# Resume:')
+    expect(resumed.out).toContain('accept() is half written')
+    expect(resumed.out).toContain('git cat-file -t')
+
+    // turned off, nothing is recorded
+    const off = { ...hookInput, session_id: `off-${run}`, prompt: 'private words' }
+    expect(brainCli(a, ['hook', 'user-prompt'], { input: JSON.stringify(off), env: env({ CAIRN_SESSION_CAPTURE: 'off' }) }).code).toBe(0)
+    const after = (await (await fetch(`${url}/api/sessions`, { headers: { authorization: `Bearer ${token}`, 'x-cairn-project': idA } })).json()).sessions
+    expect(after.some((x: { id: string }) => x.id === `off-${run}`)).toBe(false)
+  })
+
+  it('does not record a session for a folder that is not linked to a project', () => {
+    const bare = repo(`https://example.com/${run}/not-registered.git`)
+    const input = { cwd: bare, session_id: `bare-${run}`, prompt: 'hello' }
+    expect(brainCli(bare, ['hook', 'user-prompt'], { input: JSON.stringify(input) }).code).toBe(0)
+    // the hook did not create a project from the repository: nothing to find by its remote
   })
 
   it('hooks stay silent and succeed when the server is unreachable or the folder is unknown', () => {

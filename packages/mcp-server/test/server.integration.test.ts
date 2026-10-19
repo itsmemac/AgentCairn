@@ -71,8 +71,10 @@ describe.skipIf(!process.env.NEO4J_URI)('MCP server against a live Neo4j', () =>
       'cairn_briefing',
       'cairn_checkpoint',
       'cairn_forget',
+      'cairn_handoff',
       'cairn_recall',
       'cairn_remember',
+      'cairn_resume',
       'cairn_status',
     ])
     expect(client.getInstructions()).toContain('cairn_briefing')

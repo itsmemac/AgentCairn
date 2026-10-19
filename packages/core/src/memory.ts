@@ -10,6 +10,8 @@ export const MEMORY_KINDS = [
   'checkpoint',
   'thread',
   'glossary',
+  /** Where the work stands, for whoever picks it up: written by `cairn_handoff`. */
+  'handoff',
 ] as const
 export type MemoryKind = (typeof MEMORY_KINDS)[number]
 
@@ -27,6 +29,8 @@ export interface RememberInput {
   importance?: number
   /** Ids of active memories this one replaces. They are kept as history. */
   supersedes?: string[]
+  /** A line of work this belongs to (a handoff's branch). A new handoff replaces the one with the same topic. */
+  topic?: string
   commitSha?: string
   author?: string
   agent?: string
@@ -44,6 +48,7 @@ export interface Memory {
   importance: number
   status: MemoryStatus
   supersedes: string[]
+  topic: string | null
   commitSha: string | null
   author: string | null
   agent: string | null
@@ -63,6 +68,8 @@ export interface RecallOptions {
   area?: string
   limit?: number
   includeSuperseded?: boolean
+  /** `importance` (default: the most important first), `recent` or `oldest`. Ignored when searching text. */
+  sort?: 'importance' | 'recent' | 'oldest'
 }
 
 export class MemoryValidationError extends Error {
@@ -125,7 +132,7 @@ function validate(input: RememberInput): void {
 }
 
 const MEMORY_RETURN = `
-  m{.id, .projectId, .kind, .title, .body, .importance, .status, .commitSha, .author, .agent, .machine,
+  m{.id, .projectId, .kind, .title, .body, .importance, .status, .topic, .commitSha, .author, .agent, .machine,
     paths: coalesce(m.paths, []), createdAt: toString(m.createdAt)} AS m,
   [(a:Area)-[:HAS_MEMORY]->(m) | a.name][0] AS area,
   [(m)-[:SUPERSEDES]->(o:Memory) | o.id] AS supersedes`
@@ -139,6 +146,7 @@ function toMemory(row: Row): Memory {
     importance: Number(m.importance),
     area: (row.get('area') as string | null) ?? null,
     supersedes: row.get('supersedes') as string[],
+    topic: m.topic ?? null,
     commitSha: m.commitSha ?? null,
     author: m.author ?? null,
     agent: m.agent ?? null,
@@ -170,6 +178,7 @@ export async function remember(brain: Brain, projectId: string, input: RememberI
       paths: input.paths ?? [],
       importance: input.importance ?? 3,
       status: 'active',
+      topic: input.topic?.trim().toLowerCase().slice(0, 64) || null,
       commitSha: input.commitSha ?? null,
       author: input.author ?? null,
       agent: input.agent ?? null,
@@ -329,7 +338,9 @@ export async function recall(
   const r = await brain.run(
     `MATCH (m:Memory) WHERE ${filter}
      RETURN ${MEMORY_RETURN}
-     ORDER BY m.importance DESC, m.createdAt DESC
+     ORDER BY ${
+       options.sort === 'recent' ? 'm.createdAt DESC, m.importance DESC' : options.sort === 'oldest' ? 'm.createdAt ASC, m.importance DESC' : 'm.importance DESC, m.createdAt DESC'
+     }
      LIMIT $limit`,
     common,
   )

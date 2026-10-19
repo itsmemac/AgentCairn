@@ -23,6 +23,7 @@ An AI agent that opens your project cold has to read files, guess conventions an
 
 - **Agents write the memories.** Through MCP tools (`cairn_remember`, `cairn_checkpoint`) an agent records what it learns. The server never calls an LLM: no API key, no per-token cost, and it works with any MCP-capable agent.
 - **Briefings instead of crawling.** `cairn_briefing` assembles the most important memories for a project within a token budget: overview, conventions, gotchas, open threads, recent checkpoints, decisions.
+- **Another agent can pick up where you stopped.** Sessions are recorded as they happen (what you asked, the agent's last message, files, commits, uncommitted work), and the agent writes a handoff: done, in progress, next, blocked, tried and dropped. A new session, on any machine, opens with that and checks the repository against it. If your laptop dies, nothing has to be explained again. See [Handing work over](docs/claude-code.md#handing-work-over).
 - **Memories know when they are stale.** Each memory records the commit and files it was written about. If those files have changed, the briefing flags it.
 - **History is kept.** A changed fact *supersedes* the old one rather than overwriting it, so concurrent agents cannot clobber each other and the reasoning trail survives.
 - **One memory per project, across machines.** A project is identified by an explicit id or by its (normalized, hashed) git remote, so every clone resolves to the same memory.
@@ -85,12 +86,12 @@ More ways to connect, updating, uninstalling and troubleshooting are in [Using i
 | | |
 | --- | --- |
 | ![Memory graph](docs/images/graph.jpg) | ![A project's memories](docs/images/project.jpg) |
-| **Graph**: the project at the root, its areas, and the memories under each. Nodes glow when an agent reads or writes them. | **Projects**: every memory with its kind, area, importance, author and commit. |
+| **Graph**: every project as a bubble sized by what it remembers; click one to open its areas, double-click to explore its memories. Quiet projects fade, and nodes glow when an agent reads or writes them. | **A project**: where the work was left, the recent sessions, and every memory, sorted newest first by default. |
 
 ![Projects, in light mode](docs/images/projects-light.jpg)
 
 - **Live**: every request with its payload, latency and the memories it touched; throughput, per-tool latency, clients online. Admin only.
-- **Projects** and **Graph**: browse, search and explore the memories of the projects you can access; follow supersede chains. Create a project, or delete one you own.
+- **Projects** and **Graph**: browse, search, sort and explore the memories of the projects you can access; see the latest handoff and the recent sessions; follow supersede chains. Create a project, or delete one you own.
 - **Query**: a read-only Cypher console. Admin only.
 - **Access**: create and revoke your tokens, copy ready-made connection commands. An admin also sees everyone's.
 - **System**: server and Neo4j health, graph size, security and capture settings. Admin only.
@@ -107,7 +108,9 @@ The model, the permission matrix and the rollout are in [Users, projects and acc
 
 | Tool | Purpose |
 | --- | --- |
-| `cairn_briefing` | Start here: a budgeted briefing, or onboarding instructions for an empty project |
+| `cairn_briefing` | Start here: a budgeted briefing that opens with where the last work stopped, or onboarding instructions for an empty project |
+| `cairn_resume` | Pick up someone else's work: the full handoff, recent sessions, open threads, and how to check the repository |
+| `cairn_handoff` | Write where the work stands (done, in progress, next, blocked, tried and dropped) so the next agent can carry on |
 | `cairn_recall` | Search memories by text, kind and area |
 | `cairn_remember` | Record a decision, convention, gotcha, overview, open thread or glossary term |
 | `cairn_checkpoint` | Record a finished goal, its decisions, and what is next |

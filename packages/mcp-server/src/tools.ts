@@ -1,4 +1,5 @@
 import {
+  HANDOFF_STATUSES,
   AccessError,
   MAX_BRIEFING_TOKENS,
   MEMORY_KINDS,
@@ -8,9 +9,11 @@ import {
   ProjectNameError,
   ProjectNotFoundError,
   RemoteConflictError,
+  SessionError,
   SupersedeError,
   UnresolvedProjectError,
   buildBriefing,
+  buildResume,
   checkConnection,
   checkStaleness,
   checkpoint,
@@ -20,6 +23,7 @@ import {
   listAreas,
   loadConfig,
   recall,
+  recordHandoff,
   remember,
   schemaVersion,
   shortId,
@@ -45,6 +49,7 @@ export function describeError(error: unknown): string {
     error instanceof ProjectMissingError ||
     error instanceof ProjectNameError ||
     error instanceof AccessError ||
+    error instanceof SessionError ||
     error instanceof RemoteConflictError
   ) {
     return error.message
@@ -80,6 +85,13 @@ export function formatMemory(m: Memory, staleness?: Staleness, score?: number | 
 }
 
 const kindSchema = z.enum(MEMORY_KINDS)
+// handoffs are written with cairn_handoff, which also retires the one it replaces
+const writableKindSchema = z.enum(['overview', 'decision', 'convention', 'gotcha', 'checkpoint', 'thread', 'glossary'])
+const workspaceSchema = z
+  .object({ branch: z.string().optional(), head: z.string().optional(), dirty: z.array(z.string()).max(200).optional() })
+  .optional()
+  .describe('Set automatically by hooks; leave empty')
+const lines = (what: string) => z.array(z.string().min(1).max(600)).max(30).optional().describe(what)
 const commitShaSchema = z.string().optional().describe('Set automatically by hooks; leave empty')
 const authorSchema = z.string().optional().describe('Set automatically by hooks; leave empty')
 const pathsSchema = z.array(z.string()).max(50).optional().describe('Repo-relative files or folders this concerns; used to detect staleness')
@@ -87,6 +99,8 @@ const areaSchema = z.string().optional().describe('Module or subsystem this is a
 
 export const SERVER_INSTRUCTIONS = `Agent Cairn is the shared, persistent memory of this project, written by agents like you.
 - Start of a session: call cairn_briefing before exploring the repo and trust it over re-reading files. If it returns an onboarding prompt, follow it.
+- When you pick up work someone else started (or after a long break): call cairn_resume for the full handoff and the recent sessions.
+- When you stop with work unfinished, or the person is about to leave: call cairn_handoff so the next agent, on any machine, can carry on without being re-briefed.
 - After finishing a goal or process: call cairn_checkpoint.
 - When you learn something durable (a decision and its reason, a convention, a trap): call cairn_remember. Replace outdated memories with supersedes (ids shown as #abc12345).
 - Look things up with cairn_recall instead of searching the repo for context that is probably recorded.`
@@ -131,9 +145,10 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         area: areaSchema,
         limit: z.number().int().min(1).max(50).optional().describe('Default 10'),
         include_superseded: z.boolean().optional().describe('Also return memories that were replaced'),
+        sort: z.enum(['importance', 'recent', 'oldest']).optional().describe('Order when not searching text (default: importance)'),
       },
     },
-    guard(async ({ query, kind, area, limit, include_superseded }) => {
+    guard(async ({ query, kind, area, limit, include_superseded, sort }) => {
       const project = await ctx.project({ write: false })
       const found = await recall(ctx.brain, project.projectId, {
         query,
@@ -141,6 +156,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         area,
         limit,
         includeSuperseded: include_superseded,
+        sort,
       })
       if (found.length === 0) return ok('No matching memories.')
       const staleness = ctx.cwd ? await checkStaleness(ctx.cwd, found) : undefined
@@ -155,7 +171,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
       description:
         'Store one durable fact about this project: a decision (with its reason), convention, gotcha, overview, open thread or glossary term. One fact per memory. Use supersedes to replace outdated memories.',
       inputSchema: {
-        kind: kindSchema,
+        kind: writableKindSchema,
         title: z.string().min(1).max(200),
         body: z.string().min(1).max(20_000).describe('Short and specific: the why and the non-obvious, no pasted code'),
         area: areaSchema,
@@ -217,6 +233,73 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
       if (r.thread) parts.push(`Open thread #${shortId(r.thread.id)} created.`)
       if (r.checkpoint.supersedes.length) parts.push(`Resolved ${r.checkpoint.supersedes.length} thread(s).`)
       return ok(parts.join(' '))
+    }),
+  )
+
+  server.registerTool(
+    'cairn_handoff',
+    {
+      title: 'Hand the work over',
+      description:
+        'Write down where the work stands so another agent, on another machine, can carry on without being told: what is done, what is in progress and its exact state, what to do next (in order), what is blocked or open, what was tried and dropped, and what the person asked that must keep being honoured. Call it when you stop with work unfinished, before a long break, or when the person says they are leaving. Replaces the previous handoff for the same topic (the branch by default).',
+      inputSchema: {
+        goal: z.string().min(1).max(200).describe('What this work is, in a line'),
+        status: z.enum(HANDOFF_STATUSES).optional().describe('in_progress (default), blocked, paused or done'),
+        in_progress: z.string().max(1500).optional().describe('What was mid-flight and its exact state: the file, the function, the half-finished step'),
+        next: lines('What to do next, in order'),
+        blockers: lines('Open questions and things waiting on a person'),
+        from_user: z.string().max(1500).optional().describe('What the person asked or said that the next agent must keep honouring (preferences, limits, "do not push")'),
+        dead_ends: lines('What was tried and did not work, and why, so nobody repeats it'),
+        done: lines('What is finished, concretely'),
+        verify: z.string().max(1000).optional().describe('How to check the work: commands, tests, URLs'),
+        decisions: z
+          .array(z.object({ title: z.string().min(1).max(200), body: z.string().min(1).max(20_000), area: areaSchema }))
+          .max(20)
+          .optional()
+          .describe('Choices worth keeping on their own, each with its reason'),
+        paths: pathsSchema,
+        topic: z.string().max(64).optional().describe('The line of work; a new handoff replaces the old one for it. Defaults to the branch'),
+        workspace: workspaceSchema,
+        commit_sha: commitShaSchema,
+        author: authorSchema,
+      },
+    },
+    guard(async ({ goal, status, in_progress, next, blockers, from_user, dead_ends, done, verify, decisions, paths, topic, workspace, commit_sha, author }) => {
+      const project = await ctx.project({ write: true })
+      const r = await recordHandoff(ctx.brain, project.projectId, {
+        goal,
+        status,
+        inProgress: in_progress,
+        next,
+        blockers,
+        fromUser: from_user,
+        deadEnds: dead_ends,
+        done,
+        verify,
+        decisions,
+        paths,
+        topic,
+        workspace,
+        ...(await ctx.provenance({ commitSha: commit_sha, author })),
+      })
+      const parts = [`Handoff #${shortId(r.handoff.id)} recorded (topic: ${r.handoff.topic}).`]
+      if (r.handoff.supersedes.length) parts.push('It replaces the previous handoff for this topic.')
+      if (r.decisions.length) parts.push(`${r.decisions.length} decision(s) stored.`)
+      return ok(parts.join(' '))
+    }),
+  )
+
+  server.registerTool(
+    'cairn_resume',
+    {
+      title: 'Pick up where the work stopped',
+      description:
+        'Everything needed to carry on someone else\'s work: the latest handoffs in full, what each recent session asked and left behind (recorded automatically), open threads, and how to check this repository against where the work stopped. Call it when you start on work another agent or machine began.',
+      inputSchema: { workspace: workspaceSchema },
+    },
+    guard(async ({ workspace }) => {
+      const project = await ctx.project({ write: false })
+      return ok(await buildResume(ctx.brain, project.projectId, { label: project.isNew ? (project.requested ?? project.suggestedName) : undefined, here: workspace }))
     }),
   )
 

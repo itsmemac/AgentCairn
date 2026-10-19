@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { loadEnvironment } from '@agentcairn/core'
+import { type ResumeInfo, type SessionInput, loadEnvironment } from '@agentcairn/core'
 
 export class ClientError extends Error {
   constructor(
@@ -70,6 +70,8 @@ export interface BriefingReply {
   includedIds: string[]
   staleIds: string[]
   omitted: number
+  /** Where the last work stopped, so a hook can check this repository against it. */
+  resume?: ResumeInfo | null
 }
 
 export interface ProjectInfo {
@@ -142,6 +144,10 @@ export class ServerClient {
   staleInputs = async () => (await this.request<{ inputs: StaleInput[] }>('/api/stale-inputs')).inputs
   briefing = (body: { maxTokens?: number; stale?: { id: string; changedPaths: string[] }[] }) =>
     this.request<BriefingReply>('/api/briefing', { body })
+  /** Records a snapshot of the running session (never creates a project). */
+  session = (body: SessionInput) => this.request<{ id: string; updatedAt: string }>('/api/session', { body })
+  /** The full picture for carrying on someone else's work. */
+  resume = (body: { workspace?: { branch?: string; head?: string; dirty?: string[] } } = {}) => this.request<{ text: string }>('/api/resume', { body })
   addRemote = (remote: string, force = false) =>
     this.request<{ projectId: string; remote: string }>('/api/remote', { body: { remote, force } })
 }

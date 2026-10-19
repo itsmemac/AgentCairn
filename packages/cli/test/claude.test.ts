@@ -54,7 +54,7 @@ describe('mcp config', () => {
 })
 
 describe('hooks', () => {
-  it('adds the three hooks and keeps everyone else’s', () => {
+  it('adds the hooks and keeps everyone else’s', () => {
     const mine = { type: 'command', command: 'echo mine' }
     const existing = JSON.stringify({
       permissions: { allow: ['Bash(ls)'] },
@@ -67,7 +67,13 @@ describe('hooks', () => {
     expect(parsed.hooks.Stop[0].hooks[0]).toEqual(mine)
     expect(parsed.hooks.Stop[1].hooks[0].command).toBe(`${CLI} hook stop`)
     expect(parsed.hooks.SessionStart[0].hooks[0].command).toBe(`${CLI} hook session-start`)
-    expect(parsed.hooks.PreToolUse[0].matcher).toBe('mcp__cairn__cairn_remember|mcp__cairn__cairn_checkpoint')
+    expect(parsed.hooks.PreToolUse[0].matcher).toBe(
+      'mcp__cairn__cairn_remember|mcp__cairn__cairn_checkpoint|mcp__cairn__cairn_handoff|mcp__cairn__cairn_resume',
+    )
+    // the conversation is recorded as it goes, not only when it ends
+    expect(parsed.hooks.UserPromptSubmit[0].hooks[0].command).toBe(`${CLI} hook user-prompt`)
+    expect(parsed.hooks.PreCompact[0].hooks[0].command).toBe(`${CLI} hook pre-compact`)
+    expect(parsed.hooks.SessionEnd[0].hooks[0].command).toBe(`${CLI} hook session-end`)
   })
 
   it('is idempotent and swaps an old command for a new one', () => {
@@ -79,9 +85,15 @@ describe('hooks', () => {
   })
 
   it('inspects across files', () => {
-    expect(inspectHooks(null, null)).toEqual({ sessionStart: false, stop: false, preToolUse: false })
+    expect(inspectHooks(null, null)).toEqual({ sessionStart: false, stop: false, preToolUse: false, capture: false })
     const full = mergeHooks(null, CLI)
-    expect(inspectHooks(null, full)).toEqual({ sessionStart: true, stop: true, preToolUse: true })
+    expect(inspectHooks(null, full)).toEqual({ sessionStart: true, stop: true, preToolUse: true, capture: true })
+    // an install from before session capture has the three original hooks but not the capture ones
+    const original = JSON.parse(full)
+    delete original.hooks.UserPromptSubmit
+    delete original.hooks.SessionEnd
+    delete original.hooks.PreCompact
+    expect(inspectHooks(JSON.stringify(original))).toEqual({ sessionStart: true, stop: true, preToolUse: true, capture: false })
     expect(inspectHooks('{oops', full).stop).toBe(true)
   })
 })
@@ -115,14 +127,20 @@ describe('analyzeTurn', () => {
 
   it('counts edits since the last prompt and ignores tool results as prompts', () => {
     const t = [prompt('old'), use('Edit'), use('Edit'), prompt('new'), use('Write'), toolResult, use('Bash'), use('MultiEdit')].join('\n')
-    expect(analyzeTurn(t)).toEqual({ edits: 2, checkpointed: false })
+    expect(analyzeTurn(t)).toEqual({ edits: 2, checkpointed: false, handedOff: false })
   })
 
   it('sees a checkpoint in this turn but not one from an earlier turn', () => {
     const thisTurn = [prompt('go'), use('Edit'), use('mcp__cairn__cairn_checkpoint')].join('\n')
     expect(analyzeTurn(thisTurn).checkpointed).toBe(true)
     const earlier = [prompt('a'), use('mcp__cairn__cairn_checkpoint'), prompt('b'), use('Edit')].join('\n')
-    expect(analyzeTurn(earlier)).toEqual({ edits: 1, checkpointed: false })
+    expect(analyzeTurn(earlier)).toEqual({ edits: 1, checkpointed: false, handedOff: false })
+  })
+
+  it('counts a handoff as recording where the work stands', () => {
+    const t = [prompt('go'), use('Edit'), use('mcp__cairn__cairn_handoff')].join('\n')
+    expect(analyzeTurn(t)).toMatchObject({ checkpointed: false, handedOff: true })
+    expect(analyzeTurn([prompt('a'), use('mcp__cairn__cairn_handoff'), prompt('b'), use('Edit')].join('\n')).handedOff).toBe(false)
   })
 
   it('accepts array-form prompts, skips sidechains and meta rows, tolerates junk', () => {
@@ -130,8 +148,8 @@ describe('analyzeTurn', () => {
     const side = line({ type: 'assistant', isSidechain: true, message: { content: [{ type: 'tool_use', name: 'Edit' }] } })
     const meta = line({ type: 'user', isMeta: true, message: { content: 'system reminder' } })
     const t = ['not json', arrayPrompt, use('Edit'), side, meta, '', '{"type":'].join('\n')
-    expect(analyzeTurn(t)).toEqual({ edits: 1, checkpointed: false })
-    expect(analyzeTurn('')).toEqual({ edits: 0, checkpointed: false })
+    expect(analyzeTurn(t)).toEqual({ edits: 1, checkpointed: false, handedOff: false })
+    expect(analyzeTurn('')).toEqual({ edits: 0, checkpointed: false, handedOff: false })
   })
 })
 

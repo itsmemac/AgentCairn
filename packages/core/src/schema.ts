@@ -1,11 +1,13 @@
 import type { Brain } from './db.js'
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 // Plain Cypher on Neo4j Community: no APOC, no enterprise-only features.
 export const SCHEMA_STATEMENTS = [
   'CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE',
   'CREATE CONSTRAINT remote_key IF NOT EXISTS FOR (r:Remote) REQUIRE r.key IS UNIQUE',
+  'CREATE CONSTRAINT session_key IF NOT EXISTS FOR (s:Session) REQUIRE s.key IS UNIQUE',
+  'CREATE INDEX session_project IF NOT EXISTS FOR (s:Session) ON (s.projectId)',
   'CREATE CONSTRAINT user_username IF NOT EXISTS FOR (u:User) REQUIRE u.username IS UNIQUE',
   'CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE',
   'CREATE CONSTRAINT area_id IF NOT EXISTS FOR (a:Area) REQUIRE a.id IS UNIQUE',

@@ -10,14 +10,17 @@ import {
   ProjectNotFoundError,
   RemoteConflictError,
   SOLO_PRINCIPAL,
+  SessionError,
   type Staleness,
   UnresolvedProjectError,
   attachRemote,
   buildBriefing,
+  buildResume,
   checkConnection,
   countActiveByKind,
   estimateTokens,
   hasDefaultCredentials,
+  listSessions,
   listStaleInputs,
   loadConfig,
   normalizeRemoteHint,
@@ -25,6 +28,7 @@ import {
   remoteHash,
   schemaVersion,
   SupersedeError,
+  upsertSession,
 } from '@agentcairn/core'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { Authenticator, authFailureMessage } from './authn.js'
@@ -86,7 +90,7 @@ function toHttpError(error: unknown): HttpError {
   if (error instanceof ProjectNameError) {
     return new HttpError(error.code === 'exists' ? 409 : 400, error.code === 'ambiguous' ? 'ambiguous_project' : error.code === 'exists' ? 'project_exists' : 'invalid', error.message)
   }
-  if (error instanceof MemoryValidationError || error instanceof SupersedeError) {
+  if (error instanceof MemoryValidationError || error instanceof SupersedeError || error instanceof SessionError) {
     return new HttpError(400, 'invalid', error.message)
   }
   const e = error as { code?: string; message?: string }
@@ -268,6 +272,31 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
       }
       const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : undefined
       return send(res, 200, await buildBriefing(brain, project.projectId, { maxTokens, staleness, label: project.isNew ? (project.requested ?? project.suggestedName) : undefined }))
+    }
+
+    // Session capture records a conversation as it goes. It never creates a project: a folder nobody
+    // registered is simply not recorded.
+    if (path === '/api/session' && method === 'POST') {
+      const project = await ctx.project({ write: false, action: 'memory.write' })
+      if (project.isNew) throw new HttpError(404, 'project_not_found', 'This folder is not linked to a project yet, so the session was not recorded. Run `cairn init`.', { projectId: project.requested ?? project.projectId })
+      const saved = await upsertSession(brain, project.projectId, { ...body, sessionId: String(body.sessionId ?? '') })
+      return send(res, 200, { id: saved.id, updatedAt: saved.updatedAt })
+    }
+
+    if (path === '/api/sessions' && method === 'GET') {
+      const project = await ctx.project({ write: false })
+      const limit = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('limit')) || 10
+      return send(res, 200, { sessions: project.isNew ? [] : await listSessions(brain, project.projectId, { limit }) })
+    }
+
+    if (path === '/api/resume' && method === 'POST') {
+      const project = await ctx.project({ write: false })
+      const here = asRecord(body.workspace)
+      const text = await buildResume(brain, project.projectId, {
+        label: project.isNew ? (project.requested ?? project.suggestedName) : undefined,
+        here: { branch: typeof here.branch === 'string' ? here.branch : undefined, head: typeof here.head === 'string' ? here.head : undefined, dirty: Array.isArray(here.dirty) ? here.dirty.filter((d): d is string => typeof d === 'string') : undefined },
+      })
+      return send(res, 200, { text })
     }
 
     if (path === '/api/remote' && method === 'POST') {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
-import { checkStaleness } from '@agentcairn/core'
+import { checkStaleness, getWorkspace } from '@agentcairn/core'
 import { ClientError, ServerClient, loadClientConfig } from './client.js'
 import { formatChecks, runDoctor } from './commands/doctor.js'
 import { runHook } from './commands/hook.js'
@@ -22,6 +22,7 @@ Usage:
   cairn doctor             Check the setup end to end
   cairn briefing           Print the briefing an agent would get
       --tokens <n>         Token budget (default 1200)
+  cairn resume             Everything needed to carry on where the last agent stopped
   cairn remote <git-url>   Also recognize another git URL as this project
       --force              Take the URL over from another project
   cairn mcp                Run as a stdio MCP server that forwards to your Agent Cairn server
@@ -30,6 +31,7 @@ Usage:
   cairn hook <name>        Used by Claude Code hooks (session-start, stop, pre-tool-use)
 
 Environment: CAIRN_URL (server address), CAIRN_TOKEN (bearer token).
+CAIRN_SESSION_CAPTURE: full (default), meta (files and commits only) or off.
 Also read from CAIRN_ENV_FILE, ./.env or ~/.cairn/.env.`
 
 const print = (s: string) => console.log(s)
@@ -83,6 +85,15 @@ async function main(): Promise<number> {
       const staleness = await checkStaleness(local.dir, await client.staleInputs())
       const stale = [...staleness].filter(([, s]) => s.status === 'stale').map(([id, s]) => ({ id, changedPaths: s.changedPaths }))
       print((await client.briefing({ maxTokens: values.tokens ? Number(values.tokens) : 1200, stale })).text)
+      return 0
+    }
+
+    case 'resume': {
+      const local = await readLocalProject(cwd)
+      const client = new ServerClient(loadClientConfig(local.dir), hintOf(local))
+      const here = await getWorkspace(local.dir)
+      const reply = await client.resume({ workspace: { branch: here.branch ?? undefined, head: here.head ?? undefined, dirty: here.dirty } })
+      print(reply.text)
       return 0
     }
 
