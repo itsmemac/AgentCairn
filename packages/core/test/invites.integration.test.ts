@@ -265,7 +265,7 @@ describe.skipIf(!process.env.NEO4J_URI)('invitations, accounts, token scopes and
     })
 
     it('never throws, even for input it cannot store', async () => {
-      await expect(recordAudit(brain, { actor: null, action: 'x'.repeat(500) })).resolves.toBeUndefined()
+      await expect(recordAudit(brain, { actor: name('admin'), action: 'x'.repeat(500) })).resolves.toBeUndefined() // the actor lets cleanup find it
     })
   })
 })
