@@ -43,6 +43,11 @@ export class SessionStore {
   clear(): void {
     this.sessions.clear()
   }
+
+  /** Ends every session of one person (disabled, removed, demoted, password reset). */
+  destroyUser(username: string): void {
+    for (const [id, s] of this.sessions) if (s.username === username) this.sessions.delete(id)
+  }
 }
 
 export function parseCookies(req: IncomingMessage): Record<string, string> {

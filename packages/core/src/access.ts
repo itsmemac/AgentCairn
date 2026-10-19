@@ -31,10 +31,20 @@ export const roleAllows = (role: ProjectRole, action: Action): boolean => RANK[r
 
 // ---- who is asking ---------------------------------------------------------
 
+/** What a token is limited to, on top of what its user may do. */
+export interface TokenScope {
+  /** May read memories, never write or delete them. */
+  readOnly: boolean
+  /** Only these projects (null: every project its user can reach). */
+  projects: string[] | null
+}
+
 export interface Principal {
   userId: string
   username: string
   role: InstanceRole
+  /** Present when the request came with a limited token. */
+  scope?: TokenScope
   /**
    * Solo mode: there is at most one user, so everything is theirs and project access is not checked.
    * Adding a second user turns it off.
@@ -50,8 +60,17 @@ export class AccessError extends Error {
     readonly code: 'not_found' | 'forbidden',
     readonly projectId: string,
     readonly action: Action,
+    readonly reason: 'role' | 'token' | 'scope' = 'role',
   ) {
-    super(code === 'not_found' ? `Project "${projectId}" does not exist.` : `Your role on this project does not allow ${action}.`)
+    super(
+      code === 'not_found'
+        ? `Project "${projectId}" does not exist.`
+        : reason === 'scope'
+          ? 'This token is limited to particular projects and cannot create new ones.'
+          : reason === 'token'
+            ? `This token is read-only: it cannot ${action === 'memory.write' ? 'write memories' : action}.`
+            : `Your role on this project does not allow ${action}.`,
+    )
     this.name = 'AccessError'
   }
 }
@@ -71,6 +90,9 @@ export async function projectRole(brain: Brain, userId: string, projectId: strin
  * does not leak; a member whose role is too low gets "forbidden".
  */
 export async function authorize(brain: Brain, principal: Principal, action: Action, projectId: string): Promise<ProjectRole> {
+  // a token's own limits apply first, in solo mode too: they are a choice the person made
+  if (principal.scope?.projects && !principal.scope.projects.includes(projectId)) throw new AccessError('not_found', projectId, action)
+  if (principal.scope?.readOnly && action !== 'memory.read') throw new AccessError('forbidden', projectId, action, 'token')
   if (principal.solo) return 'owner'
   const role = await projectRole(brain, principal.userId, projectId)
   if (!role) throw new AccessError('not_found', projectId, action)
@@ -80,9 +102,20 @@ export async function authorize(brain: Brain, principal: Principal, action: Acti
 
 /** Ids of the projects a principal can see at all. `null` means all of them (solo mode). */
 export async function accessibleProjectIds(brain: Brain, principal: Principal): Promise<string[] | null> {
-  if (principal.solo) return null
+  const limited = principal.scope?.projects ?? null
+  if (principal.solo) return limited
   const r = await brain.run('MATCH (:User {id: $userId})-[:MEMBER_OF]->(p:Project) RETURN p.id AS id', { userId: principal.userId })
-  return r.records.map(x => x.get('id') as string)
+  const ids = r.records.map(x => x.get('id') as string)
+  return limited ? ids.filter(id => limited.includes(id)) : ids
+}
+
+/** The caller's role on every project they are a member of. */
+export async function projectRoles(brain: Brain, principal: Principal): Promise<Map<string, ProjectRole>> {
+  const roles = new Map<string, ProjectRole>()
+  if (principal.solo) return roles // solo: every project is theirs, callers treat a missing entry as owner
+  const r = await brain.run('MATCH (:User {id: $userId})-[m:MEMBER_OF]->(p:Project) RETURN p.id AS id, m.role AS role', { userId: principal.userId })
+  for (const row of r.records) if (isProjectRole(row.get('role'))) roles.set(row.get('id') as string, row.get('role') as ProjectRole)
+  return roles
 }
 
 // ---- projects: generated ids, names ---------------------------------------
@@ -90,7 +123,7 @@ export async function accessibleProjectIds(brain: Brain, principal: Principal): 
 export class ProjectNameError extends Error {
   constructor(
     message: string,
-    readonly code: 'invalid' | 'exists' | 'ambiguous',
+    readonly code: 'invalid' | 'exists' | 'ambiguous' | 'limit',
   ) {
     super(message)
     this.name = 'ProjectNameError'
@@ -135,6 +168,15 @@ export async function createProject(brain: Brain, ownerId: string, rawName: stri
         { ownerId, name },
       )
       if (Number(owned.records[0]?.get('n')) > 0) throw new ProjectNameError(`You already own a project named "${name}".`, 'exists')
+      // the admin may cap how many projects someone can own
+      const quota = await tx.run(
+        'MATCH (u:User {id: $ownerId}) OPTIONAL MATCH (u)-[:MEMBER_OF {role: "owner"}]->(p:Project) RETURN u.maxProjects AS max, count(p) AS owned',
+        { ownerId },
+      )
+      const max = quota.records[0]?.get('max')
+      if (max !== null && max !== undefined && Number(quota.records[0]?.get('owned')) >= Number(max)) {
+        throw new ProjectNameError(`You can own at most ${Number(max)} project${Number(max) === 1 ? '' : 's'} on this server.`, 'limit')
+      }
       const made = await tx.run(
         `MATCH (u:User {id: $ownerId})
          CREATE (p:Project {id: $id, name: $name, createdAt: datetime()})
@@ -160,6 +202,7 @@ export async function findAccessibleProject(brain: Brain, principal: Principal, 
   const direct = byId.records[0]
   if (direct) {
     const id = direct.get('id') as string
+    if (principal.scope?.projects && !principal.scope.projects.includes(id)) return null
     if (principal.solo || (await projectRole(brain, principal.userId, id))) return { id, name: direct.get('name') as string }
     return null
   }
@@ -170,7 +213,10 @@ export async function findAccessibleProject(brain: Brain, principal: Principal, 
          RETURN p.id AS id, coalesce(p.name, p.id) AS name, m.role AS role`,
     { key: idOrName, userId: principal.userId },
   )
-  const rows = byName.records.map(r => ({ id: r.get('id') as string, name: r.get('name') as string, role: r.get('role') as string }))
+  const allowed = principal.scope?.projects
+  const rows = byName.records
+    .map(r => ({ id: r.get('id') as string, name: r.get('name') as string, role: r.get('role') as string }))
+    .filter(r => !allowed || allowed.includes(r.id))
   if (rows.length === 0) return null
   const owned = rows.filter(r => r.role === 'owner')
   const pick = owned.length === 1 ? owned : rows

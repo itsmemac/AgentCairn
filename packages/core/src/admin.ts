@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { type InstanceRole, type Principal, isInstanceRole } from './access.js'
+import { type InstanceRole, type Principal, type TokenScope, isInstanceRole } from './access.js'
 import type { Brain } from './db.js'
 
 const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen: number, options: object) => Promise<Buffer>
@@ -29,7 +29,7 @@ export function validateCredentials(username: string, password: string): void {
   }
 }
 
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16)
   const key = await scryptAsync(password, salt, KEYLEN, SCRYPT)
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${key.toString('hex')}`
@@ -61,10 +61,12 @@ export interface UserRecord {
   role: InstanceRole
   status: 'active' | 'disabled'
   createdAt: string
+  /** How many projects this person may own; null for no limit. */
+  maxProjects: number | null
 }
 
 const USER_RETURN = `coalesce(a.id, a.username) AS id, a.username AS username, coalesce(a.role, 'admin') AS role,
-  coalesce(a.status, 'active') AS status, toString(a.createdAt) AS createdAt`
+  coalesce(a.status, 'active') AS status, toString(a.createdAt) AS createdAt, a.maxProjects AS maxProjects`
 
 const toUser = (row: { get(k: string): unknown }): UserRecord => ({
   id: row.get('id') as string,
@@ -72,6 +74,7 @@ const toUser = (row: { get(k: string): unknown }): UserRecord => ({
   role: isInstanceRole(row.get('role')) ? (row.get('role') as InstanceRole) : 'member',
   status: row.get('status') === 'disabled' ? 'disabled' : 'active',
   createdAt: row.get('createdAt') as string,
+  maxProjects: row.get('maxProjects') === null || row.get('maxProjects') === undefined ? null : Number(row.get('maxProjects')),
 })
 
 export const principalOf = (user: UserRecord, solo = false): Principal => ({ userId: user.id, username: user.username, role: user.role, solo })
@@ -239,12 +242,17 @@ export interface ApiTokenInfo {
   createdBy: string | null
   lastUsedAt: string | null
   revokedAt: string | null
+  /** The token can read but never write. */
+  readOnly: boolean
+  /** The token only reaches these projects; empty means every project its user can reach. */
+  projects: string[]
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 
 const TOKEN_RETURN = `t.id AS id, t.name AS name, t.prefix AS prefix, toString(t.createdAt) AS createdAt,
-  t.createdBy AS createdBy, toString(t.lastUsedAt) AS lastUsedAt, toString(t.revokedAt) AS revokedAt`
+  t.createdBy AS createdBy, toString(t.lastUsedAt) AS lastUsedAt, toString(t.revokedAt) AS revokedAt,
+  coalesce(t.readOnly, false) AS readOnly, coalesce(t.projects, []) AS projects`
 
 const toInfo = (row: { get(k: string): unknown }): ApiTokenInfo => ({
   id: row.get('id') as string,
@@ -254,19 +262,34 @@ const toInfo = (row: { get(k: string): unknown }): ApiTokenInfo => ({
   createdBy: (row.get('createdBy') as string | null) ?? null,
   lastUsedAt: (row.get('lastUsedAt') as string | null) ?? null,
   revokedAt: (row.get('revokedAt') as string | null) ?? null,
+  readOnly: row.get('readOnly') === true,
+  projects: (row.get('projects') as string[] | undefined) ?? [],
 })
 
 /** Creates a token. The plaintext is returned once; only its hash is stored. The token acts as its creator. */
-export async function createApiToken(brain: Brain, name: string, createdBy?: string): Promise<{ info: ApiTokenInfo; token: string }> {
+export async function createApiToken(
+  brain: Brain,
+  name: string,
+  createdBy?: string,
+  scope: { readOnly?: boolean; projects?: string[] } = {},
+): Promise<{ info: ApiTokenInfo; token: string }> {
   const label = name.trim()
   if (!label || label.length > 60) throw new AdminError('Token name must be 1-60 characters.', 'invalid')
   const token = `aib_${randomBytes(24).toString('base64url')}`
   const r = await brain.run(
     `OPTIONAL MATCH (a) WHERE (a:User OR a:Admin) AND a.username = toLower($createdBy)
-     CREATE (t:ApiToken {id: $id, name: $name, hash: $hash, prefix: $prefix, createdAt: datetime(), createdBy: $createdBy})
+     CREATE (t:ApiToken {id: $id, name: $name, hash: $hash, prefix: $prefix, createdAt: datetime(), createdBy: $createdBy, readOnly: $readOnly, projects: $projects})
      FOREACH (_ IN CASE WHEN a IS NULL THEN [] ELSE [1] END | CREATE (a)-[:CREATED]->(t))
      RETURN ${TOKEN_RETURN}`,
-    { id: randomBytes(8).toString('hex'), name: label, hash: sha256(token), prefix: token.slice(0, 8), createdBy: createdBy ?? null },
+    {
+      id: randomBytes(8).toString('hex'),
+      name: label,
+      hash: sha256(token),
+      prefix: token.slice(0, 8),
+      createdBy: createdBy ?? null,
+      readOnly: scope.readOnly === true,
+      projects: [...new Set((scope.projects ?? []).filter(p => typeof p === 'string' && p !== '').slice(0, 100))],
+    },
   )
   return { info: toInfo(r.records[0]!), token }
 }
@@ -295,6 +318,8 @@ export interface FoundToken {
   name: string
   /** The account the token acts as; null for a token with no creator (treated as the first admin). */
   user: UserRecord | null
+  /** What the token is limited to, or null when it can do all its user can. */
+  scope: TokenScope | null
 }
 
 /** Looks a presented token up by hash; revoked tokens do not match. */
@@ -302,12 +327,19 @@ export async function findApiToken(brain: Brain, token: string): Promise<FoundTo
   const r = await brain.run(
     `MATCH (t:ApiToken {hash: $hash}) WHERE t.revokedAt IS NULL
      OPTIONAL MATCH (a)-[:CREATED]->(t) WHERE a:User OR a:Admin
-     RETURN t.id AS tokenId, t.name AS tokenName, ${USER_RETURN}`,
+     RETURN t.id AS tokenId, t.name AS tokenName, coalesce(t.readOnly, false) AS readOnly, coalesce(t.projects, []) AS scopedProjects, ${USER_RETURN}`,
     { hash: sha256(token) },
   )
   const row = r.records[0]
   if (!row) return null
-  return { id: row.get('tokenId') as string, name: row.get('tokenName') as string, user: row.get('username') ? toUser(row) : null }
+  const readOnly = row.get('readOnly') === true
+  const projects = row.get('scopedProjects') as string[]
+  return {
+    id: row.get('tokenId') as string,
+    name: row.get('tokenName') as string,
+    user: row.get('username') ? toUser(row) : null,
+    scope: readOnly || projects.length ? { readOnly, projects: projects.length ? projects : null } : null,
+  }
 }
 
 export async function touchApiToken(brain: Brain, id: string): Promise<void> {
@@ -317,4 +349,76 @@ export async function touchApiToken(brain: Brain, id: string): Promise<void> {
 export async function countActiveTokens(brain: Brain): Promise<number> {
   const r = await brain.run('MATCH (t:ApiToken) WHERE t.revokedAt IS NULL RETURN count(t) AS n')
   return Number(r.records[0]?.get('n'))
+}
+
+// ---- managing accounts ---------------------------------------------------------
+
+export interface UserOverview extends UserRecord {
+  /** Projects this person owns. */
+  owned: number
+  /** Projects this person can reach, owned or shared. */
+  reach: number
+}
+
+export async function listUserOverview(brain: Brain): Promise<UserOverview[]> {
+  const r = await brain.run(
+    `MATCH ${ACCOUNT}
+     OPTIONAL MATCH (a)-[m:MEMBER_OF]->(:Project)
+     RETURN ${USER_RETURN}, count(m) AS reach, count(CASE WHEN m.role = 'owner' THEN 1 END) AS owned
+     ORDER BY createdAt, username`,
+  )
+  return r.records.map(row => ({ ...toUser(row), reach: Number(row.get('reach')), owned: Number(row.get('owned')) }))
+}
+
+async function guardLastAdmin(brain: Brain, id: string, what: string): Promise<void> {
+  const user = await getUserById(brain, id)
+  if (user?.role === 'admin' && user.status === 'active' && (await countActiveAdmins(brain)) <= 1) {
+    throw new AdminError(`The last active admin cannot be ${what}.`, 'invalid')
+  }
+}
+
+/** Promotes or demotes an account. The last active admin cannot be demoted. */
+export async function setUserRole(brain: Brain, id: string, role: InstanceRole): Promise<boolean> {
+  if (!isInstanceRole(role)) throw new AdminError('Unknown role.', 'invalid')
+  if (role !== 'admin') await guardLastAdmin(brain, id, 'demoted')
+  const r = await brain.run(`MATCH ${ACCOUNT} AND coalesce(a.id, a.username) = $id SET a.role = $role RETURN a.username AS u`, { id, role })
+  return r.records.length > 0
+}
+
+/** Caps how many projects an account may own (null removes the cap). */
+export async function setUserLimits(brain: Brain, id: string, limits: { maxProjects: number | null }): Promise<boolean> {
+  const max = limits.maxProjects
+  if (max !== null && !(Number.isInteger(max) && max >= 0 && max <= 10_000)) {
+    throw new AdminError('The project limit must be a whole number from 0 to 10000, or empty for no limit.', 'invalid')
+  }
+  const r = await brain.run(`MATCH ${ACCOUNT} AND coalesce(a.id, a.username) = $id SET a.maxProjects = $max RETURN a.username AS u`, { id, max })
+  return r.records.length > 0
+}
+
+/** Sets a new password directly (used when someone follows a password-reset link). */
+export async function setUserPassword(brain: Brain, id: string, username: string, password: string): Promise<void> {
+  validateCredentials(username, password)
+  await brain.run(`MATCH ${ACCOUNT} AND coalesce(a.id, a.username) = $id SET a.passwordHash = $hash`, { id, hash: await hashPassword(password) })
+}
+
+/**
+ * Removes an account, its memberships and the tokens it made. Someone who still owns projects cannot be
+ * removed: their projects would be left with no owner, so they must be transferred or deleted first.
+ */
+export async function removeUser(brain: Brain, id: string): Promise<boolean> {
+  const user = await getUserById(brain, id)
+  if (!user) return false
+  await guardLastAdmin(brain, id, 'removed')
+  const owned = await brain.run(
+    `MATCH ${ACCOUNT} AND coalesce(a.id, a.username) = $id
+     MATCH (a)-[:MEMBER_OF {role: 'owner'}]->(p:Project)
+     RETURN coalesce(p.name, p.id) AS name ORDER BY name LIMIT 10`,
+    { id },
+  )
+  if (owned.records.length) {
+    throw new AdminError(`${user.username} still owns ${owned.records.map(r => `"${r.get('name')}"`).join(', ')}. Transfer or delete those projects first.`, 'invalid')
+  }
+  await brain.run('MATCH (t:ApiToken) WHERE t.createdBy = $username AND t.revokedAt IS NULL SET t.revokedAt = datetime()', { username: user.username })
+  await brain.run(`MATCH ${ACCOUNT} AND coalesce(a.id, a.username) = $id DETACH DELETE a`, { id })
+  return true
 }

@@ -67,6 +67,7 @@ Hook tuning (`CAIRN_BRIEFING_TOKENS`, `CAIRN_CHECKPOINT_MIN_EDITS`, `CAIRN_HOOK_
 | `/api/*` | bearer token | JSON API used by the CLI and hooks: `GET /api/project`, `POST /api/init`, `GET /api/stale-inputs`, `POST /api/briefing`, `POST /api/remote`, `POST /api/session` (record a session snapshot), `GET /api/sessions`, `POST /api/resume` |
 | `/ui/` | none (the app signs in) | The dashboard |
 | `/admin/api/*` | session cookie | The dashboard's own API |
+| `/admin/api/invite/<token>` | the link itself | Preview and accept an invitation (public, rate limited) |
 
 Project identity for `/mcp` and `/api` comes from the `X-Cairn-Project` header (a project id, or a project name among the projects the token's user can access) or `X-Cairn-Remote` (a normalized git remote such as `github.com/acme/app`, matched among the user's own projects). A project the token's user cannot access answers as if it did not exist.
 

@@ -95,7 +95,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
         // not a project folder
       }
     }
-    for (const id of made) await deleteProject(brain, id)
+    for (const id of made) await deleteProject(brain, id).catch(() => undefined)
     await brain.close()
     for (const d of dirs) rmSync(d, { recursive: true, force: true })
   })

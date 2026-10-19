@@ -30,7 +30,7 @@ describe.skipIf(!process.env.NEO4J_URI)('deleting a project against a live Neo4j
   })
 
   afterAll(async () => {
-    for (const id of [doomed, kept]) await deleteProject(brain, id)
+    for (const id of [doomed, kept]) await deleteProject(brain, id).catch(() => undefined)
     await brain.close()
   })
 

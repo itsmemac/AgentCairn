@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { extname, join, normalize, sep } from 'node:path'
 import {
   AdminError,
+  InviteError,
   type Brain,
   type MemoryKind,
   MEMORY_KINDS,
@@ -11,6 +12,7 @@ import {
   ProjectNameError,
   QueryRejectedError,
   accessibleProjectIds,
+  acceptInvite,
   authorize,
   changeAdminPassword,
   checkConnection,
@@ -19,6 +21,7 @@ import {
   countAdmins,
   createApiToken,
   createFirstAdmin,
+  createInvite,
   createProject,
   deleteProject,
   findAccessibleProject,
@@ -32,15 +35,26 @@ import {
   hasDefaultCredentials,
   isProjectRole,
   listApiTokens,
+  listAudit,
+  listInvites,
   listMembers,
   listProjects,
   listSessions,
-  listUsers,
+  listUserOverview,
   loadConfig,
   migrateUsers,
+  previewInvite,
   principalOf,
+  projectRoles,
+  recordAudit,
   removeMembership,
+  removeUser,
+  revokeInvite,
   setMembership,
+  setUserLimits,
+  setUserRole,
+  setUserStatus,
+  transferOwnership,
   recall,
   revokeApiToken,
   runReadOnlyCypher,
@@ -120,6 +134,8 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
   const loginByIp = new RateLimiter(10, 10 * 60_000)
   const loginByUser = new RateLimiter(5, 10 * 60_000)
   const setupGuesses = new RateLimiter(5, 10 * 60_000)
+  const inviteLookups = new RateLimiter(40, 10 * 60_000)
+  const inviteAccepts = new RateLimiter(12, 10 * 60_000)
 
   let adminCache: { value: number; until: number } | undefined
   const adminCount = async () => {
@@ -203,6 +219,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         setupRequired: (await adminCount()) === 0,
         authenticated: Boolean(session && me),
         username: me ? session!.username : null,
+        userId: me?.userId ?? null,
         role: me?.role ?? null,
         solo: me?.solo ?? true,
       })
@@ -226,6 +243,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         setupGuesses.reset(ip)
         const s = sessions.create(admin.username)
         deps.log(`dashboard: admin "${admin.username}" created`)
+        void recordAudit(brain, { actor: admin.username, action: 'setup.completed' })
         // the first-setup lock has done its job; remove it once any racing attempts are finished with it
         setTimeout(() => void tidySystemNodes(brain).catch(() => undefined), 3000).unref()
         return send(res, 200, { username: admin.username }, { 'set-cookie': cookieFor(s.id, s.maxAgeSeconds) })
@@ -244,10 +262,52 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         throw new HttpError(429, 'rate_limited', `Too many attempts. Try again in ${Math.max(loginByIp.retryAfterSeconds(ip), loginByUser.retryAfterSeconds(username))}s.`)
       }
       const admin = await verifyAdmin(brain, username, String(body.password ?? ''))
-      if (!admin) throw new HttpError(401, 'bad_credentials', 'Wrong username or password.')
+      if (!admin) {
+        void recordAudit(brain, { actor: null, action: 'login.failed', target: username.slice(0, 64) })
+        throw new HttpError(401, 'bad_credentials', 'Wrong username or password.')
+      }
       loginByUser.reset(username)
+      void recordAudit(brain, { actor: admin.username, action: 'login' })
       const s = sessions.create(admin.username)
       return send(res, 200, { username: admin.username }, { 'set-cookie': cookieFor(s.id, s.maxAgeSeconds) })
+    }
+
+    // ---- invitations: the link is the credential, so these are public and rate limited --------
+    const inviteMatch = /^invite\/([^/]+)(\/accept)?$/.exec(route)
+    if (inviteMatch) {
+      const token = decodeURIComponent(inviteMatch[1]!)
+      if (method === 'GET' && !inviteMatch[2]) {
+        if (!inviteLookups.attempt(ip)) throw new HttpError(429, 'rate_limited', 'Too many attempts. Try again in a few minutes.')
+        const info = await previewInvite(brain, token)
+        if (!info) throw new HttpError(404, 'invite_gone', 'This invitation is not valid: it was used, withdrawn or has expired.')
+        return send(res, 200, {
+          kind: info.kind,
+          role: info.role,
+          username: info.username,
+          forUsername: info.forUsername,
+          grants: info.grants.map(g => ({ projectName: g.projectName, role: g.role })),
+          invitedBy: info.createdBy,
+          expiresAt: info.expiresAt,
+        })
+      }
+      if (method === 'POST' && inviteMatch[2]) {
+        if (!inviteAccepts.attempt(ip)) throw new HttpError(429, 'rate_limited', 'Too many attempts. Try again in a few minutes.')
+        const body = asRecord(await readJson(req, deps.maxBodyBytes))
+        try {
+          const user = await acceptInvite(brain, token, { username: typeof body.username === 'string' ? body.username : undefined, password: String(body.password ?? '') })
+          sessions.destroyUser(user.username)
+          auth.invalidate()
+          principals.delete(user.username)
+          void recordAudit(brain, { actor: user.username, action: 'invite.accepted', target: user.username })
+          const s = sessions.create(user.username)
+          return send(res, 200, { username: user.username }, { 'set-cookie': cookieFor(s.id, s.maxAgeSeconds) })
+        } catch (error) {
+          if (error instanceof InviteError) {
+            throw new HttpError(error.code === 'gone' ? 410 : error.code === 'taken' ? 409 : 400, error.code === 'gone' ? 'invite_gone' : error.code === 'taken' ? 'username_taken' : 'invalid', error.message)
+          }
+          throw error
+        }
+      }
     }
 
     if (route === 'logout' && method === 'POST') {
@@ -271,6 +331,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         if (error instanceof AdminError) throw new HttpError(400, 'invalid', error.message)
         throw error
       }
+      void recordAudit(brain, { actor: session.username, action: 'password.changed' })
       sessions.clear()
       const s = sessions.create(session.username)
       return send(res, 200, { ok: true }, { 'set-cookie': cookieFor(s.id, s.maxAgeSeconds) })
@@ -324,7 +385,9 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     }
 
     if (route === 'projects' && method === 'GET') {
-      return send(res, 200, { projects: await listProjects(brain, { projectIds: await accessibleProjectIds(brain, principal) }) })
+      const roles = await projectRoles(brain, principal)
+      const list = await listProjects(brain, { projectIds: await accessibleProjectIds(brain, principal) })
+      return send(res, 200, { projects: list.map(p => ({ ...p, role: roles.get(p.id) ?? (principal.solo ? 'owner' : null) })) })
     }
 
     if (route === 'projects' && method === 'POST') {
@@ -336,6 +399,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       const owned = existing && (await authorize(brain, principal, 'project.delete', existing.id).then(() => true, () => false))
       if (existing && owned) return send(res, 200, { id: existing.id, name: existing.name, created: false })
       const made = await createProject(brain, principal.userId, name)
+      void recordAudit(brain, { actor: principal.username, action: 'project.created', target: made.name })
       return send(res, 200, { id: made.id, name: made.name, created: true })
     }
 
@@ -344,14 +408,17 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       await authorize(brain, principal, 'memory.read', decodeURIComponent(projectMatch[1]!))
       const detail = await getProjectDetail(brain, decodeURIComponent(projectMatch[1]!))
       if (!detail) throw new HttpError(404, 'not_found', 'No such project.')
-      return send(res, 200, detail)
+      const role = (await projectRoles(brain, principal)).get(detail.id) ?? (principal.solo ? 'owner' : null)
+      return send(res, 200, { ...detail, role })
     }
 
     if (projectMatch && method === 'DELETE') {
       const id = decodeURIComponent(projectMatch[1]!)
       await authorize(brain, principal, 'project.delete', id)
+      const label = (await getProjectDetail(brain, id))?.name ?? id
       const gone = await deleteProject(brain, id)
       if (!gone) throw new HttpError(404, 'not_found', 'No such project.')
+      void recordAudit(brain, { actor: principal.username, action: 'project.deleted', target: label, detail: `${gone.memories} memories` })
       return send(res, 200, { id, ...gone })
     }
 
@@ -359,8 +426,21 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (membersMatch) {
       const id = decodeURIComponent(membersMatch[1]!)
       const userId = membersMatch[2] ? decodeURIComponent(membersMatch[2]) : undefined
+      const projectName = async () => (await getProjectDetail(brain, id))?.name ?? id
+      const usernameOf = async (uid: string) => (await listMembers(brain, id)).find(m => m.userId === uid)?.username ?? uid
       if (method === 'GET' && !userId) {
         await authorize(brain, principal, 'memory.read', id)
+        return send(res, 200, { members: await listMembers(brain, id) })
+      }
+      if (method === 'POST' && !userId) {
+        await authorize(brain, principal, 'member.manage', id)
+        const body = asRecord(await readJson(req, deps.maxBodyBytes))
+        const role = body.role
+        if (!isProjectRole(role) || role === 'owner') throw new HttpError(400, 'invalid', 'Role must be viewer, editor or maintainer.')
+        const target = await getUserByUsername(brain, String(body.username ?? ''))
+        if (!target || target.status !== 'active') throw new HttpError(404, 'no_such_user', 'No such user. Ask an admin to invite them first.')
+        await setMembership(brain, id, target.id, role)
+        void recordAudit(brain, { actor: principal.username, action: 'member.added', target: await projectName(), detail: `${target.username} as ${role}` })
         return send(res, 200, { members: await listMembers(brain, id) })
       }
       if (method === 'PUT' && userId) {
@@ -368,15 +448,31 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
         const role = asRecord(await readJson(req, deps.maxBodyBytes)).role
         if (!isProjectRole(role) || role === 'owner') throw new HttpError(400, 'invalid', 'Role must be viewer, editor or maintainer.')
         await setMembership(brain, id, userId, role)
+        void recordAudit(brain, { actor: principal.username, action: 'member.changed', target: await projectName(), detail: `${await usernameOf(userId)} is now ${role}` })
         return send(res, 200, { members: await listMembers(brain, id) })
       }
       if (method === 'DELETE' && userId) {
         // you may always leave a project; removing someone else needs member.manage
-        if (userId !== principal.userId) await authorize(brain, principal, 'member.manage', id)
+        const leaving = userId === principal.userId
+        if (!leaving) await authorize(brain, principal, 'member.manage', id)
         else await authorize(brain, principal, 'memory.read', id)
+        const who = await usernameOf(userId)
         if (!(await removeMembership(brain, id, userId))) throw new HttpError(404, 'not_found', 'That user is not a member.')
+        void recordAudit(brain, { actor: principal.username, action: leaving ? 'member.left' : 'member.removed', target: await projectName(), detail: leaving ? undefined : who })
         return send(res, 200, { members: await listMembers(brain, id) })
       }
+    }
+
+    const transferMatch = /^projects\/([^/]+)\/transfer$/.exec(route)
+    if (transferMatch && method === 'POST') {
+      const id = decodeURIComponent(transferMatch[1]!)
+      await authorize(brain, principal, 'project.delete', id) // only the owner hands a project over
+      const target = await getUserByUsername(brain, String(asRecord(await readJson(req, deps.maxBodyBytes)).username ?? ''))
+      if (!target || target.status !== 'active') throw new HttpError(404, 'no_such_user', 'No such user.')
+      if (target.id === principal.userId) throw new HttpError(400, 'invalid', 'You already own this project.')
+      await transferOwnership(brain, id, target.id)
+      void recordAudit(brain, { actor: principal.username, action: 'project.transferred', target: (await getProjectDetail(brain, id))?.name ?? id, detail: `to ${target.username}` })
+      return send(res, 200, { members: await listMembers(brain, id) })
     }
 
     const sessionsMatch = /^projects\/([^/]+)\/sessions$/.exec(route)
@@ -386,9 +482,104 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       return send(res, 200, { sessions: await listSessions(brain, id, { limit: q.get('limit') ? Number(q.get('limit')) : 20 }) })
     }
 
+    if (route === 'users/lookup' && method === 'GET') {
+      const found = await getUserByUsername(brain, q.get('username') ?? '')
+      if (!found || found.status !== 'active') throw new HttpError(404, 'no_such_user', 'No such user.')
+      return send(res, 200, { id: found.id, username: found.username })
+    }
+
     if (route === 'users' && method === 'GET') {
       requireAdmin(principal)
-      return send(res, 200, { users: (await listUsers(brain)).map(u => ({ id: u.id, username: u.username, role: u.role, status: u.status, createdAt: u.createdAt })) })
+      return send(res, 200, { users: await listUserOverview(brain), invites: await listInvites(brain) })
+    }
+
+    const userMatch = /^users\/([^/]+)$/.exec(route)
+    if (userMatch && (method === 'PATCH' || method === 'DELETE')) {
+      requireAdmin(principal)
+      const id = decodeURIComponent(userMatch[1]!)
+      const target = (await listUserOverview(brain)).find(u => u.id === id)
+      if (!target) throw new HttpError(404, 'not_found', 'No such user.')
+      // what they may do is looked up again at once; their sign-ins end only when they are disabled or removed
+      const refresh = (endSessions: boolean) => {
+        if (endSessions) sessions.destroyUser(target.username)
+        principals.delete(target.username)
+        auth.invalidate()
+      }
+      try {
+        if (method === 'DELETE') {
+          if (id === principal.userId) throw new HttpError(400, 'invalid', 'You cannot remove your own account.')
+          await removeUser(brain, id)
+          refresh(true)
+          void recordAudit(brain, { actor: principal.username, action: 'user.removed', target: target.username })
+          return send(res, 200, { ok: true })
+        }
+        const body = asRecord(await readJson(req, deps.maxBodyBytes))
+        if (body.role !== undefined) {
+          if (body.role !== 'admin' && body.role !== 'member') throw new HttpError(400, 'invalid', 'Role must be admin or member.')
+          if (body.role !== target.role) {
+            await setUserRole(brain, id, body.role)
+            void recordAudit(brain, { actor: principal.username, action: 'user.role', target: target.username, detail: String(body.role) })
+          }
+        }
+        if (body.status !== undefined) {
+          if (body.status !== 'active' && body.status !== 'disabled') throw new HttpError(400, 'invalid', 'Status must be active or disabled.')
+          if (body.status === 'disabled' && id === principal.userId) throw new HttpError(400, 'invalid', 'You cannot disable your own account.')
+          if (body.status !== target.status) {
+            await setUserStatus(brain, id, body.status)
+            if (body.status === 'disabled') refresh(true)
+            void recordAudit(brain, { actor: principal.username, action: body.status === 'disabled' ? 'user.disabled' : 'user.enabled', target: target.username })
+          }
+        }
+        if (body.maxProjects !== undefined) {
+          await setUserLimits(brain, id, { maxProjects: body.maxProjects === null || body.maxProjects === '' ? null : Number(body.maxProjects) })
+          void recordAudit(brain, { actor: principal.username, action: 'user.limit', target: target.username, detail: String(body.maxProjects ?? 'none') })
+        }
+        refresh(false)
+        return send(res, 200, { user: (await listUserOverview(brain)).find(u => u.id === id) })
+      } catch (error) {
+        if (error instanceof AdminError) throw new HttpError(400, 'invalid', error.message)
+        throw error
+      }
+    }
+
+    if (route === 'invites' && method === 'POST') {
+      requireAdmin(principal)
+      const body = asRecord(await readJson(req, deps.maxBodyBytes))
+      try {
+        const made = await createInvite(brain, principal, {
+          kind: body.kind === 'reset' ? 'reset' : 'join',
+          role: body.role === 'admin' ? 'admin' : 'member',
+          username: typeof body.username === 'string' ? body.username : undefined,
+          forUserId: typeof body.forUserId === 'string' ? body.forUserId : undefined,
+          grants: Array.isArray(body.grants) ? (body.grants as { projectId: string; role: 'viewer' | 'editor' | 'maintainer' }[]) : undefined,
+          maxProjects: body.maxProjects === undefined || body.maxProjects === null || body.maxProjects === '' ? null : Number(body.maxProjects),
+          ttlDays: typeof body.ttlDays === 'number' ? body.ttlDays : undefined,
+        })
+        void recordAudit(brain, { actor: principal.username, action: 'invite.created', target: made.info.forUsername ?? made.info.username ?? made.info.role, detail: made.info.kind === 'reset' ? 'password reset' : `${made.info.role}, ${made.info.grants.length} project(s)` })
+        return send(res, 200, made)
+      } catch (error) {
+        if (error instanceof InviteError) throw new HttpError(error.code === 'taken' ? 409 : 400, error.code === 'taken' ? 'username_taken' : 'invalid', error.message)
+        throw error
+      }
+    }
+
+    const inviteIdMatch = /^invites\/([0-9a-f-]+)$/.exec(route)
+    if (inviteIdMatch && method === 'DELETE') {
+      requireAdmin(principal)
+      if (!(await revokeInvite(brain, inviteIdMatch[1]!))) throw new HttpError(404, 'not_found', 'No such pending invitation.')
+      void recordAudit(brain, { actor: principal.username, action: 'invite.revoked' })
+      return send(res, 200, { ok: true })
+    }
+
+    if (route === 'audit' && method === 'GET') {
+      requireAdmin(principal)
+      return send(res, 200, {
+        events: await listAudit(brain, {
+          limit: q.get('limit') ? Number(q.get('limit')) : 100,
+          before: q.get('before') ?? undefined,
+          action: q.get('action') ?? undefined,
+        }),
+      })
     }
 
     if (route === 'memories' && method === 'GET') {
@@ -428,6 +619,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (route === 'cypher' && method === 'POST') {
       requireAdmin(principal)
       const body = asRecord(await readJson(req, deps.maxBodyBytes))
+      void recordAudit(brain, { actor: principal.username, action: 'console.query', detail: String(body.query ?? '').replace(/\s+/g, ' ').slice(0, 200) })
       try {
         return send(res, 200, await runReadOnlyCypher(brain, String(body.query ?? '')))
       } catch (error) {
@@ -445,8 +637,12 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (route === 'tokens' && method === 'POST') {
       const body = asRecord(await readJson(req, deps.maxBodyBytes))
       try {
-        const created = await createApiToken(brain, String(body.name ?? ''), session.username)
+        const projects = Array.isArray(body.projects) ? body.projects.filter((p): p is string => typeof p === 'string') : []
+        // a token can only be limited to projects its owner can reach
+        for (const p of projects) await authorize(brain, principal, 'memory.read', p)
+        const created = await createApiToken(brain, String(body.name ?? ''), session.username, { readOnly: body.readOnly === true, projects })
         auth.invalidate()
+        void recordAudit(brain, { actor: principal.username, action: 'token.created', target: created.info.name, detail: [created.info.readOnly ? 'read-only' : '', projects.length ? `${projects.length} project(s)` : ''].filter(Boolean).join(', ') || undefined })
         return send(res, 200, created)
       } catch (error) {
         if (error instanceof AdminError) throw new HttpError(400, 'invalid', error.message)
@@ -458,6 +654,7 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (tokenMatch && method === 'DELETE') {
       if (!(await revokeApiToken(brain, tokenMatch[1]!, isAdmin ? {} : { createdBy: principal.username }))) throw new HttpError(404, 'not_found', 'No such active token.')
       auth.invalidate()
+      void recordAudit(brain, { actor: principal.username, action: 'token.revoked', target: tokenMatch[1]!.slice(0, 8) })
       return send(res, 200, { ok: true })
     }
 

@@ -27,6 +27,7 @@ export async function mount(container, { navigate }) {
         { class: 'row muted', style: { fontSize: '12px', marginTop: 'auto', paddingTop: '10px', borderTop: '1px solid var(--border)' } },
         h('span', null, p.lastMemoryAt ? ['updated ', ago(p.lastMemoryAt)] : 'no memories yet'),
         h('span', { class: 'grow' }),
+        p.role && p.role !== 'owner' && h('span', { class: 'badge' }, p.role),
         p.owner && h('span', null, `by ${p.owner}`),
         p.superseded > 0 && h('span', null, `${p.superseded} superseded`),
         h('span', null, `${p.remotes} remote${p.remotes === 1 ? '' : 's'}`),

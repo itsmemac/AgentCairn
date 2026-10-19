@@ -61,7 +61,7 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
       hashes: [remote, aliasRemote, secondRemote].map(remoteHash),
     })
     const ids = new Set([remoteProject, explicitId, ...byRemote.records.map(r => r.get('id') as string)].filter(Boolean))
-    for (const id of ids) await deleteProject(brain, id)
+    for (const id of ids) await deleteProject(brain, id).catch(() => undefined)
     await brain.close()
   })
 

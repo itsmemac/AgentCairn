@@ -3,6 +3,7 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import {
   AccessError,
   type Brain,
+  MembershipError,
   MemoryValidationError,
   type Principal,
   ProjectMissingError,
@@ -87,7 +88,11 @@ function toHttpError(error: unknown): HttpError {
       ? new HttpError(404, 'project_not_found', error.message, { projectId: error.projectId })
       : new HttpError(403, 'forbidden', error.message, { projectId: error.projectId, action: error.action })
   }
+  if (error instanceof MembershipError) {
+    return new HttpError(error.code === 'no_such_user' ? 404 : 400, error.code === 'owner' ? 'owner' : error.code === 'no_such_user' ? 'no_such_user' : 'invalid', error.message)
+  }
   if (error instanceof ProjectNameError) {
+    if (error.code === 'limit') return new HttpError(403, 'project_limit', error.message)
     return new HttpError(error.code === 'exists' ? 409 : 400, error.code === 'ambiguous' ? 'ambiguous_project' : error.code === 'exists' ? 'project_exists' : 'invalid', error.message)
   }
   if (error instanceof MemoryValidationError || error instanceof SupersedeError || error instanceof SessionError) {

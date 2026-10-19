@@ -78,8 +78,9 @@ describe.skipIf(!process.env.NEO4J_URI)('users and sharing through the server', 
   afterAll(async () => {
     await new Promise(r => server.close(r))
     const byRemote = await brain.run('MATCH (r:Remote)-[:BELONGS_TO]->(p:Project) WHERE r.hash = $hash RETURN p.id AS id', { hash: remoteHash(remote) })
-    for (const id of new Set([...projects, ...byRemote.records.map(r => r.get('id') as string)])) await deleteProject(brain, id)
+    for (const id of new Set([...projects, ...byRemote.records.map(r => r.get('id') as string)].filter(Boolean))) await deleteProject(brain, id).catch(() => undefined)
     await brain.run('MATCH (t:ApiToken) WHERE t.createdBy STARTS WITH $run DETACH DELETE t', { run })
+    await brain.run('MATCH (a:Audit) WHERE a.actor STARTS WITH $run OR a.target STARTS WITH $run DETACH DELETE a', { run })
     await brain.run('MATCH (u:User) WHERE u.username STARTS WITH $run DETACH DELETE u', { run })
     await brain.close()
   })

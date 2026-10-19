@@ -12,6 +12,18 @@ An AI agent that opens your project cold has to read files, guess conventions an
 
 ![The live dashboard](docs/images/live.jpg)
 
+## Why this exists
+
+I built Agent Cairn because my laptop broke in the middle of a project.
+
+Everything the agent and I had worked out together lived on that machine: the chat history, the memory files, the half-finished plan, the list of things we had already tried and thrown away. When I opened a new session on another computer, none of it came with me. The new agent was capable and willing, and knew nothing. I spent the first hours re-explaining the project, the decisions, the traps and exactly where we had stopped, and I still got it wrong in places, because I could not remember it all either.
+
+Agent memory that lives on one machine is only as durable as that machine. A broken laptop, a second computer, a new account, a teammate: each one starts from zero, and the cost is paid in your time, not the agent's.
+
+So the rule behind this project is simple: **whatever one agent learns, the next agent should be able to pick up, on any machine, exactly where the last one left off.** Memory sits on a server you own, in a database you can inspect. Sessions are recorded as they happen, so even an abrupt end loses very little. And before an agent stops, it writes a handoff: what is done, what is in progress, what comes next, what is blocked, and what was tried and dropped, so the next one does not walk down the same dead end.
+
+Then it grew the pieces a team needs to trust it: private projects, sharing, roles and an audit trail.
+
 ## How it works
 
 ```
@@ -90,6 +102,8 @@ More ways to connect, updating, uninstalling and troubleshooting are in [Using i
 
 ![Projects, in light mode](docs/images/projects-light.jpg)
 
+![Users: invite people, set limits, see who owns and reaches what](docs/images/users.jpg)
+
 - **Live**: every request with its payload, latency and the memories it touched; throughput, per-tool latency, clients online. Admin only.
 - **Projects** and **Graph**: browse, search, sort and explore the memories of the projects you can access; see the latest handoff and the recent sessions; follow supersede chains. Create a project, or delete one you own.
 - **Query**: a read-only Cypher console. Admin only.
@@ -102,7 +116,7 @@ Dark and light themes, phone-friendly. Request payloads are kept **in memory onl
 
 Projects are **private to the user who made them**. A project has a generated id (`prj_…`) and a name; names may repeat. An owner can share a project with other users as a **viewer** (reads), **editor** (reads and writes), or **maintainer** (also deletes memories and manages members). Agent tokens act as the user who created them and can never do more than that user can. Two people working in the same repository each get their own project unless one shares theirs.
 
-The model, the permission matrix and the rollout are in [Users, projects and access control](docs/access-control.md). Today the rules are enforced everywhere (MCP tools, the agent API, the dashboard) and the project members API works; the screens for inviting users and for sharing are the next step.
+The model, the permission matrix and the rollout are in [Users, projects and access control](docs/access-control.md). An admin invites people from **Users** (a one-time link, no email server needed), can cap how many projects each may own, and sees every change in **Audit**. Owners share a project from its **Who has access** panel. Tokens can be read-only or limited to chosen projects.
 
 ## What agents get
 

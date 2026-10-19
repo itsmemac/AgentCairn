@@ -4,6 +4,7 @@ import {
   type Brain,
   type Principal,
   SOLO_PRINCIPAL,
+  type TokenScope,
   type UserRecord,
   countActiveTokens,
   countActiveUsers,
@@ -66,12 +67,13 @@ export class Authenticator {
   }
 
   /** Who a request acts as. A token acts as its creator; the old shared token and open mode act as the first admin. */
-  private async principalFor(user: UserRecord | null): Promise<Principal | null> {
+  private async principalFor(user: UserRecord | null, scope: TokenScope | null = null): Promise<Principal | null> {
     const solo = await this.isSolo()
     const acting = user ?? (await firstAdmin(this.brain))
-    if (!acting) return SOLO_PRINCIPAL
+    if (!acting) return scope ? { ...SOLO_PRINCIPAL, scope } : SOLO_PRINCIPAL
     if (acting.status === 'disabled') return null
-    return principalOf(acting, solo)
+    const principal = principalOf(acting, solo)
+    return scope ? { ...principal, scope } : principal
   }
 
   private async hasManagedTokens(): Promise<boolean> {
@@ -108,7 +110,7 @@ export class Authenticator {
       if ((this.bad.get(key) ?? 0) > now) return { ok: false, reason: 'invalid' }
 
       const found = await findApiToken(this.brain, bearer)
-      const principal = found ? await this.principalFor(found.user) : null
+      const principal = found ? await this.principalFor(found.user, found.scope) : null
       if (found && principal) {
         this.good.set(key, { id: found.id, name: found.name, principal, until: now + POSITIVE_MS })
         this.touch(found.id, now)

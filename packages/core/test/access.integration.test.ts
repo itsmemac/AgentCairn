@@ -88,7 +88,8 @@ describe.skipIf(!process.env.NEO4J_URI)('users, sharing and visibility against a
   })
 
   afterAll(async () => {
-    for (const id of made) await deleteProject(brain, id)
+    for (const id of made.filter(Boolean)) await deleteProject(brain, id).catch(() => undefined)
+    await brain.run('MATCH (t:ApiToken) WHERE t.createdBy STARTS WITH $prefix DETACH DELETE t', { prefix: run }).catch(() => undefined)
     await brain.run('MATCH (u:User) WHERE u.username STARTS WITH $prefix DETACH DELETE u', { prefix: run })
     await brain.run('MATCH (a:Admin) WHERE a.username STARTS WITH $prefix DETACH DELETE a', { prefix: run })
     await brain.close()

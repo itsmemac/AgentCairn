@@ -1,33 +1,32 @@
 import { api } from '../api.js'
 import { clear, h, svg } from '../dom.js'
 
-function brand() {
+export function brand() {
   return h(
     'div',
     { class: 'brand' },
     svg(
       'svg',
       { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
-      svg('g', { stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linecap': 'round' }, svg('path', { d: 'M9 21 16 10M16 10l8 11M9 21h15' })),
-      svg('circle', { cx: 9, cy: 21, r: 3, fill: 'var(--text)' }),
-      svg('circle', { cx: 16, cy: 10, r: 3.4, fill: 'var(--s1)' }),
-      svg('circle', { cx: 24, cy: 21, r: 3, fill: 'var(--text)' }),
+      svg('ellipse', { cx: 16, cy: 23.5, rx: 9, ry: 3.8, fill: 'var(--text)' }),
+      svg('ellipse', { cx: 16, cy: 16.2, rx: 6.4, ry: 3.2, fill: 'var(--text)' }),
+      svg('ellipse', { cx: 16, cy: 9.6, rx: 3.8, ry: 2.8, fill: 'var(--s1)' }),
     ),
     'Agent Cairn',
   )
 }
 
-function field(label, input, hint) {
+export function field(label, input, hint) {
   const id = `f-${Math.random().toString(36).slice(2, 8)}`
   input.id = id
   return h('div', { class: 'field' }, h('label', { for: id }, label), input, hint && h('span', { class: 'hint' }, hint))
 }
 
-function page(...children) {
+export function page(...children) {
   return h('div', { class: 'auth-page' }, h('div', { class: 'card panel' }, brand(), ...children))
 }
 
-async function submit(form, button, errorEl, work) {
+export async function submit(form, button, errorEl, work) {
   errorEl.textContent = ''
   button.disabled = true
   try {

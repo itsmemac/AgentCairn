@@ -3,6 +3,7 @@ import { clear, h, icon, initial, startClock, svg } from './dom.js'
 import { closeDrawer } from './drawer.js'
 import { live } from './store.js'
 import { mountLogin, mountSetup } from './views/auth.js'
+import { mountInvite } from './views/invite.js'
 
 const root = document.getElementById('root')
 
@@ -35,16 +36,18 @@ const ROUTES = [
   { pattern: /^\/graph$/, nav: 'graph', load: () => import('./views/graph.js') },
   { pattern: /^\/query$/, nav: 'query', load: () => import('./views/query.js') },
   { pattern: /^\/access$/, nav: 'access', load: () => import('./views/access.js') },
+  { pattern: /^\/users$/, nav: 'users', load: () => import('./views/users.js') },
+  { pattern: /^\/audit$/, nav: 'audit', load: () => import('./views/audit.js') },
   { pattern: /^\/system$/, nav: 'system', load: () => import('./views/system.js') },
 ]
 
 const NAV = [
   ['Monitor', [['live', 'Live', 'live']]],
   ['Explore', [['projects', 'Projects', 'folder'], ['graph', 'Graph', 'graph'], ['query', 'Query', 'terminal']]],
-  ['Manage', [['access', 'Access', 'key'], ['system', 'System', 'server']]],
+  ['Manage', [['access', 'Access', 'key'], ['users', 'Users', 'users'], ['audit', 'Audit', 'list'], ['system', 'System', 'server']]],
 ]
 /** Pages that show the whole server rather than your own projects: admins only. */
-const ADMIN_ONLY = new Set(['live', 'query', 'system'])
+const ADMIN_ONLY = new Set(['live', 'query', 'system', 'users', 'audit'])
 let me = { role: 'admin', solo: true }
 
 const TITLES = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([key, label]) => [key, label])))
@@ -167,7 +170,9 @@ async function route() {
   }
 }
 
-window.addEventListener('hashchange', route)
+const inviteToken = () => /^#\/invite\/([^/?]+)/.exec(location.hash)?.[1]
+
+window.addEventListener('hashchange', () => (inviteToken() || !shell ? boot() : route()))
 
 // ---- boot ------------------------------------------------------------------
 
@@ -177,6 +182,8 @@ async function boot() {
   shell?.unsubscribe()
   shell = null
   live.stop()
+  const invite = inviteToken()
+  if (invite) return mountInvite(root, decodeURIComponent(invite), boot)
   let state
   try {
     state = await api('state')

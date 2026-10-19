@@ -144,6 +144,8 @@ export interface RegisterResult {
 
 /** A new project for this person. Before any account exists there is nobody to own it, so it is the plain legacy form. */
 async function createFor(brain: Brain, principal: Principal, name: string): Promise<ProjectRef> {
+  // a token limited to certain projects, or to reading, does not make new ones
+  if (principal.scope && (principal.scope.projects || principal.scope.readOnly)) throw new AccessError('forbidden', name, 'project.update', 'scope')
   if (principal.userId === SOLO_PRINCIPAL.userId) {
     const clean = normalizeProjectName(name)
     await ensureProject(brain, clean)

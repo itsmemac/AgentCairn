@@ -45,16 +45,36 @@ A project that someone else shares with you is visible to you with your role, an
    - Nothing matches on a write: a new project is created, owned by the user, named after the repository.
 3. `authorize` checks the user's role on that project against the action. No membership answers "not found", never "forbidden", so a private project's existence does not leak. A member with too little access gets "forbidden".
 
-## Invitations (next phase)
+## Invitations
 
-An admin creates an invite for a username and instance role. It is a single-use link with 256 bits of randomness, stored hashed, expiring after 7 days. The invited person opens it and chooses a password. No email server is needed. SMTP can be added later.
+An admin creates an invitation on the **Users** page, for a role (admin or member), optionally a fixed username, a project limit, and projects to share from the start (as viewer, editor or maintainer). It is a single-use link (`…/ui/#/invite/inv_…`) with 256 bits of randomness, stored hashed with sha256, expiring after 7 days by default (1 to 30). The admin passes it on; the invited person opens it, chooses a password (and a username unless one was fixed) and is signed in. No email server is needed.
+
+- Redeeming locks the invitation and creates the account in one transaction, so two people opening the same link cannot both get in, and a failed attempt (a taken username, a weak password) leaves the link unspent.
+- Both invitation endpoints are public and rate limited.
+- **Password reset** works the same way: "Reset link" on a user creates a one-time link that sets a new password for that account and ends its sessions.
+- Withdrawing an invitation stops the link at once. Used, withdrawn and expired invitations stay in the list for reference.
+
+## Sharing
+
+The project page has a **Who has access** panel. Owners and maintainers add people by username (they must already have an account), change roles, and remove them. Anyone can leave a project they do not own. Only the owner can transfer ownership (the previous owner stays on as a maintainer) or delete the project. A project's role also shows as a badge on the project page and the project cards.
+
+## Limits and token scopes
+
+- **Project limit.** An admin can cap how many projects a person may own (Users → Limit, or at invitation time). Projects shared with them do not count. Creating one beyond the cap fails with `project_limit`.
+- **Token scopes.** A token can be **read-only** (briefings and recall work, nothing is written) and/or **limited to chosen projects**. Scope narrows what the creating user can do and is applied even in solo mode. A limited token cannot create projects.
+
+## Audit log
+
+Admins see **Audit**: sign-ins and failed sign-ins, account changes, invitations, sharing, token creation and revocation, project creation, deletion and transfer, and use of the query console. Each entry has who, what, on what, and a short detail. It never stores secrets or memory content, is written best-effort (a failed write never blocks the action) and is kept for 180 days.
 
 ## Data model
 
 ```
-(:User {id, username, passwordHash, role, status, createdAt})
+(:User {id, username, passwordHash, role, status, maxProjects, createdAt})
 (:User)-[:MEMBER_OF {role, since}]->(:Project {id, name, createdAt})
-(:User)-[:CREATED]->(:ApiToken)
+(:User)-[:CREATED]->(:ApiToken {readOnly, projects})
+(:User)-[:CREATED]->(:Invite {tokenHash, kind, role, grants, expiresAt, usedAt})
+(:Audit {at, actor, action, target, detail})
 (:Remote {key, hash})-[:BELONGS_TO]->(:Project)       key = projectId + ":" + hash
 ```
 
@@ -78,8 +98,9 @@ Everything the migration does is additive, so an older server image keeps workin
 
 ## Rollout
 
-1. **Foundation (built):** users, memberships, generated project ids, per-project remote aliases, `authorize`, the migration, enforcement for MCP tools, the agent API and the dashboard (projects, memories, graph, tokens), a members API, admin-only Live/Query/System pages, and tests for every role against every action. There is no screen yet for adding users or sharing: that is the next two phases.
-2. **Users:** invitations, the accept page, disabling users, password resets, a Users page for admins.
-3. **Sharing:** a Members panel on each project, role changes, leaving, transferring ownership.
-4. **Token scoping:** read-only tokens and tokens limited to chosen projects.
+1. **Foundation (built):** users, memberships, generated project ids, per-project remote aliases, `authorize`, the migration, enforcement for MCP tools, the agent API and the dashboard (projects, memories, graph, tokens), a members API, admin-only Live/Query/System pages, and tests for every role against every action.
+2. **Users (built):** invitations, the accept page, disabling users, password resets, a Users page for admins.
+3. **Sharing (built):** a Members panel on each project, role changes, leaving, transferring ownership.
+4. **Token scoping (built):** read-only tokens and tokens limited to chosen projects.
+5. **Limits and audit (built):** a per-user project limit and an audit log.
 5. **Hardening and extras:** audit log page, teams (share with a group), OIDC single sign-on, TOTP.

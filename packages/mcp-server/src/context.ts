@@ -1,5 +1,6 @@
 import { hostname } from 'node:os'
 import {
+  AccessError,
   PENDING,
   ProjectNotFoundError,
   type Action,
@@ -93,6 +94,9 @@ export class BrainContext {
   /** First write from a repository nobody has a project for yet: a project owned by the caller, named after the repository. */
   private async createFromRemote(project: ResolvedProject): Promise<ResolvedProject> {
     let id = project.projectId
+    if (this.principal.scope && (this.principal.scope.projects || this.principal.scope.readOnly)) {
+      throw new AccessError('forbidden', project.suggestedName ?? 'project', 'project.update', 'scope')
+    }
     if (this.principal.userId === SOLO_PRINCIPAL.userId) {
       // before any account exists there is nobody to own it: the plain legacy form
       id = `git-${project.remoteHash}`

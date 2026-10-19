@@ -61,7 +61,7 @@ describe.skipIf(!process.env.NEO4J_URI)('handoffs and sessions against a live Ne
   })
 
   afterAll(async () => {
-    await deleteProject(brain, proj)
+    await deleteProject(brain, proj).catch(() => undefined)
     await brain.close()
   })
 
@@ -155,6 +155,7 @@ describe.skipIf(!process.env.NEO4J_URI)('handoffs and sessions against a live Ne
 
   it('the briefing opens with where the work was left, then the recent sessions, and says where to resume from', async () => {
     await remember(brain, proj, { kind: 'overview', title: 'The project', body: 'What it is.', importance: 5 })
+    await new Promise(r => setTimeout(r, 30)) // the newest handoff must be strictly newer than the ones above
     const now = await recordHandoff(brain, proj, {
       goal: 'Finish the resume feature',
       inProgress: 'Wiring the hook',

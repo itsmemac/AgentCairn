@@ -65,6 +65,10 @@ Agents authenticate with bearer tokens created in the dashboard (**Access → Cr
 
 With no tokens at all, agents are refused with a message pointing at the dashboard. `CAIRN_TOKEN` is an optional static token for scripts and bootstrap (it acts as the first admin), and `CAIRN_NO_AUTH=1` disables authentication entirely (only on a network you fully trust).
 
+## Inviting other people
+
+Open **Users**, choose a role, optionally a username, a project limit and projects to share, and create the invitation. Copy the link and send it yourself (there is no email server to configure); it works once and expires after 7 days. The person opens it, chooses a password and is signed in. Behind a reverse proxy, the link uses the address you are browsing the dashboard from, so open the dashboard through your public address first. Everyone's work then stays private to them until they share it. Details: [Users, projects and access control](access-control.md).
+
 ## TLS and reverse proxies
 
 Plain HTTP is fine on a trusted LAN. Before exposing the server to the internet, put it behind a reverse proxy that terminates TLS (or use a VPN), then set:

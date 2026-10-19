@@ -41,11 +41,16 @@ function confirmDelete(id, detail, navigate) {
 
 export async function mount(container, { params, navigate }) {
   const id = params.id
-  const [detail, handoffs, sessions] = await Promise.all([
+  const [detail, handoffs, sessions, membersReply] = await Promise.all([
     api(`projects/${encodeURIComponent(id)}`),
     api(`memories?${qs({ project: id, kind: 'handoff', sort: 'recent', limit: 3 })}`).then(r => r.memories, () => []),
     api(`projects/${encodeURIComponent(id)}/sessions?limit=8`).then(r => r.sessions, () => []),
+    api(`projects/${encodeURIComponent(id)}/members`).then(r => r.members, () => []),
   ])
+  let members = membersReply
+  const role = detail.role
+  const isOwner = role === 'owner'
+  const canManage = role === 'owner' || role === 'maintainer'
   // newest first by default: what was written last is usually what matters most when picking work up
   const state = { kind: '', area: '', status: 'active', q: '', sort: 'recent' }
 
@@ -124,6 +129,95 @@ export async function mount(container, { params, navigate }) {
     )
   }
 
+  // ---- who can see this project -------------------------------------------------
+  const meId = (await api('state').catch(() => ({}))).userId
+  const membersBox = h('div', { class: 'card', style: { marginBottom: '14px' } })
+  const base = `projects/${encodeURIComponent(id)}`
+  const ROLE_NOTE = { viewer: 'reads memories', editor: 'reads and writes memories', maintainer: 'also manages who has access', owner: 'everything, including deleting the project' }
+
+  async function changeMembers(work, done) {
+    try {
+      members = (await work()).members
+      if (done) toast(done)
+      drawMembers()
+    } catch (error) {
+      toast(error.message)
+      drawMembers()
+    }
+  }
+
+  function memberRow(m) {
+    const self = m.userId === meId
+    const locked = m.role === 'owner' || !canManage
+    const sel = h('select', { 'aria-label': `Access of ${m.username}`, disabled: locked }, ['viewer', 'editor', 'maintainer', ...(m.role === 'owner' ? ['owner'] : [])].map(r => h('option', { value: r, selected: r === m.role }, r)))
+    sel.addEventListener('change', () => changeMembers(() => api(`${base}/members/${encodeURIComponent(m.userId)}`, { method: 'PUT', body: { role: sel.value } }), `${m.username} is now ${sel.value}`))
+    return h(
+      'div',
+      { class: 'row member' },
+      h('span', { class: 'avatar' }, m.username[0].toUpperCase()),
+      h('div', { class: 'grow' }, h('b', null, m.username), self && h('span', { class: 'badge', style: { marginLeft: '8px' } }, 'you'), h('div', { class: 'hint' }, ROLE_NOTE[m.role])),
+      sel,
+      m.role !== 'owner' && (canManage || self) && h('button', { class: 'btn sm danger', type: 'button', onclick: () => leaveOrRemove(m, self) }, self ? 'Leave' : 'Remove'),
+    )
+  }
+
+  async function leaveOrRemove(m, self) {
+    if (!confirm(self ? `Leave ${detail.name}? You lose access until someone adds you again.` : `Remove ${m.username} from ${detail.name}?`)) return
+    try {
+      members = (await api(`${base}/members/${encodeURIComponent(m.userId)}`, { method: 'DELETE' })).members
+      if (self) {
+        toast(`You left ${detail.name}`)
+        return navigate('#/projects')
+      }
+      toast(`${m.username} removed`)
+      drawMembers()
+    } catch (error) {
+      toast(error.message)
+    }
+  }
+
+  function transferDrawer() {
+    const others = members.filter(m => m.role !== 'owner')
+    const pick = h('select', { 'aria-label': 'New owner' }, others.map(m => h('option', { value: m.username }, m.username)))
+    const go = h('button', { class: 'btn danger', type: 'button', disabled: !others.length }, 'Transfer ownership')
+    go.addEventListener('click', async () => {
+      go.disabled = true
+      try {
+        await api(`${base}/transfer`, { body: { username: pick.value } })
+        closeDrawer()
+        toast(`${pick.value} now owns ${detail.name}`)
+        navigate('#/projects')
+      } catch (error) {
+        toast(error.message)
+        go.disabled = false
+      }
+    })
+    openDrawer(h('strong', null, 'Transfer ownership'), h('div', { class: 'stack' }, h('p', null, 'The new owner can delete the project and decides who has access. You stay on as a maintainer.'), others.length ? h('div', { class: 'field' }, h('label', null, 'New owner'), pick) : h('p', { class: 'dim' }, 'Add someone to the project first.'), go))
+  }
+
+  function addForm() {
+    const name = h('input', { class: 'input', placeholder: 'Username', 'aria-label': 'Username to add', autocomplete: 'off', style: { width: '180px' } })
+    const level = h('select', { 'aria-label': 'Access level' }, ['viewer', 'editor', 'maintainer'].map(r => h('option', { value: r, selected: r === 'editor' }, r)))
+    const add = h('button', { class: 'btn primary', type: 'submit' }, icon('plus'), 'Add')
+    const form = h('form', { class: 'row tight', style: { marginTop: '12px' } }, name, level, add, h('span', { class: 'hint' }, 'They must already have an account: an admin invites people under Users.'))
+    form.addEventListener('submit', async e => {
+      e.preventDefault()
+      if (!name.value.trim()) return
+      add.disabled = true
+      await changeMembers(() => api(`${base}/members`, { body: { username: name.value.trim(), role: level.value } }), `${name.value.trim()} added as ${level.value}`)
+      add.disabled = false
+    })
+    return form
+  }
+
+  function drawMembers() {
+    membersBox.replaceChildren(
+      h('div', { class: 'row' }, h('h2', { style: { fontSize: '15px' } }, 'Who has access'), h('span', { class: 'hint' }, members.length > 1 ? 'private to these people' : 'private to you until you add someone'), h('span', { class: 'grow' }), isOwner && members.length > 1 && h('button', { class: 'btn sm', type: 'button', onclick: transferDrawer }, 'Transfer ownership')),
+      h('div', { class: 'stack', style: { gap: '10px', marginTop: '10px' } }, ...members.map(memberRow)),
+      canManage && addForm(),
+    )
+  }
+
   function memoryRow(m) {
     return h(
       'div',
@@ -159,8 +253,8 @@ export async function mount(container, { params, navigate }) {
     h(
       'div',
       { class: 'page-head' },
-      h('div', null, h('div', { class: 'crumbs' }, h('a', { href: '#/projects' }, 'Projects'), ' /'), h('h1', { style: { fontSize: '22px' } }, detail.name), detail.name !== id && h('div', { class: 'mono muted', style: { fontSize: '12px' } }, id)),
-      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/graph?project=${encodeURIComponent(id)}`) }, icon('graph'), 'Open in graph'), h('button', { class: 'btn danger', type: 'button', onclick: () => confirmDelete(id, detail, navigate) }, icon('trash'), 'Delete'), h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/access?project=${encodeURIComponent(id)}`) }, icon('link'), 'Connect an agent')),
+      h('div', null, h('div', { class: 'crumbs' }, h('a', { href: '#/projects' }, 'Projects'), ' /'), h('div', { class: 'row tight' }, h('h1', { style: { fontSize: '22px' } }, detail.name), role && h('span', { class: 'badge' }, role)), detail.name !== id && h('div', { class: 'mono muted', style: { fontSize: '12px' } }, id)),
+      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/graph?project=${encodeURIComponent(id)}`) }, icon('graph'), 'Open in graph'), isOwner && h('button', { class: 'btn danger', type: 'button', onclick: () => confirmDelete(id, detail, navigate) }, icon('trash'), 'Delete'), h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/access?project=${encodeURIComponent(id)}`) }, icon('link'), 'Connect an agent')),
     ),
     h(
       'div',
@@ -178,9 +272,11 @@ export async function mount(container, { params, navigate }) {
     ),
     handoffCard(),
     sessionsCard(),
+    membersBox,
     h('div', { class: 'toolbar' }, search.el, areaSelect, sortSelect, statusSeg, h('span', { class: 'grow' }), count),
     h('div', { class: 'row tight', style: { marginBottom: '14px' } }, ...kindChips),
     list,
   )
+  drawMembers()
   await load()
 }

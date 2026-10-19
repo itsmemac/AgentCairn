@@ -13,14 +13,19 @@ export async function mount(container, { query }) {
 
   // ---- tokens --------------------------------------------------------------
   const nameInput = h('input', { class: 'input', placeholder: 'Name, e.g. laptop or ci-runner', maxlength: '60', 'aria-label': 'Token name', style: { width: '250px' } })
+  const readOnly = h('input', { type: 'checkbox', id: 'tok-ro' })
+  const scopeBoxes = projects.map(p => ({ p, box: h('input', { type: 'checkbox', value: p.id, 'aria-label': p.name }) }))
+  const scope = h('details', { class: 'scope' }, h('summary', null, 'Limit to projects'), h('div', { class: 'stack', style: { gap: '6px', padding: '8px 0' } }, scopeBoxes.length ? scopeBoxes.map(({ p, box }) => h('label', { class: 'row tight' }, box, p.name)) : h('span', { class: 'hint' }, 'No projects yet.'), h('span', { class: 'hint' }, 'None ticked means every project you can reach. A limited token cannot create projects.')))
   const createBtn = h('button', { class: 'btn primary', type: 'button' }, icon('plus'), 'Create token')
 
   async function create() {
     createBtn.disabled = true
     try {
-      const made = await api('tokens', { body: { name: nameInput.value } })
+      const made = await api('tokens', { body: { name: nameInput.value, readOnly: readOnly.checked, projects: scopeBoxes.filter(x => x.box.checked).map(x => x.p.id) } })
       fresh = made.token
       nameInput.value = ''
+      readOnly.checked = false
+      scopeBoxes.forEach(x => (x.box.checked = false))
       tokens = (await api('tokens')).tokens
       secretBox.replaceChildren(
         h(
@@ -56,12 +61,13 @@ export async function mount(container, { query }) {
   function drawTokens() {
     const active = tokens.filter(t => !t.revokedAt)
     tokenCard.replaceChildren(
-      h('div', { class: 'head' }, h('div', null, h('h2', null, 'Access tokens'), h('div', { class: 'hint' }, `${active.length} active · agents and the cairn CLI send one as a bearer token`)), h('div', { class: 'tools' }, nameInput, createBtn)),
+      h('div', { class: 'head' }, h('div', null, h('h2', null, 'Access tokens'), h('div', { class: 'hint' }, `${active.length} active · agents and the cairn CLI send one as a bearer token`)), h('div', { class: 'tools' }, nameInput, h('label', { class: 'row tight', for: 'tok-ro', title: 'The token can read memories and briefings but never write' }, readOnly, 'Read-only'), createBtn)),
+      h('div', { style: { padding: '0 18px 10px' } }, scope),
       secretBox,
       tokens.length
         ? h('div', { class: 'scroll', style: { maxHeight: '340px' } }, h('table', { class: 'tbl' }, h('thead', null, h('tr', null, ['Name', 'Token', 'Created', 'Last used', 'Status', ''].map(t => h('th', null, t)))),
             h('tbody', null, tokens.map(t => h('tr', { style: { opacity: t.revokedAt ? 0.55 : 1 } },
-              h('td', null, h('span', { class: 'tool-name' }, t.name)),
+              h('td', null, h('span', { class: 'tool-name' }, t.name), t.readOnly && h('span', { class: 'badge', style: { marginLeft: '8px' } }, 'read-only'), t.projects?.length > 0 && h('span', { class: 'badge', style: { marginLeft: '6px' }, title: t.projects.map(id => projects.find(p => p.id === id)?.name ?? id).join(', ') }, `${t.projects.length} project${t.projects.length === 1 ? '' : 's'}`)),
               h('td', { class: 'mono' }, `${t.prefix}…`),
               h('td', null, ago(t.createdAt), t.createdBy && h('span', { class: 'sub' }, `by ${t.createdBy}`)),
               h('td', null, t.lastUsedAt ? ago(t.lastUsedAt) : h('span', { class: 'muted' }, 'never')),

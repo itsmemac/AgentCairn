@@ -45,7 +45,9 @@ Containment is a tree: **Project → Area → Memory**.
 | `Memory` | `id`, `projectId`, `kind`, `title`, `body`, `importance` (1–5), `status` (`active`/`superseded`), `paths`, `commitSha`, `author`, `agent`, `machine`, `createdAt` |
 | `Remote` | `key` (`<project>:<hash>`), `hash`: a sha256 prefix of the normalized git remote, never the URL. One per project, so the same repository can map to different projects for different people |
 | `Session` | `key` (`<project>:<session id>`), `id`, `projectId`, `machine`, `agent`, `branch`, `head`, `dirty`, `touched`, `commits`, prompts and last reply (redacted and clipped), `updatedAt`. One per conversation, updated in place. `(Project)-[:HAS_SESSION]->(Session)` |
-| `User` | `id`, `username`, `passwordHash` (scrypt), `role` (`admin`/`member`), `status` (`active`/`disabled`). Accounts from before users also keep an `Admin` label for now |
+| `Invite` | `tokenHash` (sha256), `kind` (`join`/`reset`), `role`, `grants`, `maxProjects`, `expiresAt`, `usedAt`. Single use |
+| `Audit` | `at`, `actor`, `action`, `target`, `detail`. Pruned after 180 days |
+| `User` | `id`, `username`, `passwordHash` (scrypt), `role` (`admin`/`member`), `status` (`active`/`disabled`), `maxProjects`. Accounts from before users also keep an `Admin` label for now |
 | `ApiToken` | `id`, `name`, `hash` (sha256), `prefix`, `createdAt`, `lastUsedAt`, `revokedAt` |
 | `BrainMeta` | One row (`id: 'schema'`) holding the schema version |
 
