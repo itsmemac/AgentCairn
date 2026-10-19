@@ -415,7 +415,7 @@ describe.skipIf(!adminSlotFree)('dashboard with the one-time setup code', () => 
     const id = first.id
     expect(first).toEqual({ id: expect.any(String), name, created: true })
     expect(await json(await admin('projects', { body: { name } }))).toEqual({ id, name, created: false })
-    for (const bad of ['bad id!', '', '-lead', 'x'.repeat(65)]) expect((await admin('projects', { body: { id: bad } })).status, bad).toBe(400)
+    for (const bad of ['<script>', '', '   ', 'x'.repeat(65)]) expect((await admin('projects', { body: { id: bad } })).status, bad).toBe(400)
 
     const client = new Client({ name: 'new-project', version: '1' })
     await client.connect(new StreamableHTTPClientTransport(new URL(`${s.base}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}`, 'x-cairn-project': id } } }))
