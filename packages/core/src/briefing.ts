@@ -41,6 +41,8 @@ export interface BriefingOptions {
   cwd?: string
   /** Staleness computed elsewhere (a remote server cannot see the repo); wins over `cwd`. */
   staleness?: ReadonlyMap<string, Staleness>
+  /** What to call the project in the onboarding text, when its id is only a placeholder. */
+  label?: string
   /** For tests. */
   now?: Date
 }
@@ -200,7 +202,7 @@ export async function countActiveByKind(brain: Brain, projectId: string): Promis
 export async function buildBriefing(brain: Brain, projectId: string, options: BriefingOptions = {}): Promise<Briefing> {
   const totals = await countActiveByKind(brain, projectId)
   if ([...totals.values()].reduce((a, b) => a + b, 0) === 0) {
-    const text = onboardingPrompt(projectId)
+    const text = onboardingPrompt(options.label ?? projectId)
     return { projectId, status: 'empty', text, tokens: estimateTokens(text), includedIds: [], staleIds: [], omitted: 0 }
   }
 

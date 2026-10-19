@@ -1,9 +1,20 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
-import { type Brain, countActiveTokens, findApiToken, touchApiToken } from '@agentcairn/core'
+import {
+  type Brain,
+  type Principal,
+  SOLO_PRINCIPAL,
+  type UserRecord,
+  countActiveTokens,
+  countActiveUsers,
+  findApiToken,
+  firstAdmin,
+  principalOf,
+  touchApiToken,
+} from '@agentcairn/core'
 
 export type AuthResult =
-  | { ok: true; kind: 'env' | 'managed' | 'open'; name: string }
+  | { ok: true; kind: 'env' | 'managed' | 'open'; name: string; principal: Principal }
   | { ok: false; reason: 'missing' | 'invalid' | 'no_tokens' }
 
 export interface AuthOptions {
@@ -25,10 +36,11 @@ const TOUCH_MS = 60_000
  * every call; `invalidate()` makes revocations take effect at once.
  */
 export class Authenticator {
-  private readonly good = new Map<string, { id: string; name: string; until: number }>()
+  private readonly good = new Map<string, { id: string; name: string; principal: Principal; until: number }>()
   private readonly bad = new Map<string, number>()
   private readonly touched = new Map<string, number>()
   private managed: { value: boolean; until: number } | undefined
+  private solo: { value: boolean; until: number } | undefined
 
   constructor(
     private readonly brain: Brain,
@@ -41,6 +53,25 @@ export class Authenticator {
     this.good.clear()
     this.bad.clear()
     this.managed = undefined
+    this.solo = undefined
+  }
+
+  /** One active user or none: solo mode. Cached briefly; invalidate() refreshes it when users change. */
+  private async isSolo(): Promise<boolean> {
+    const now = this.clock()
+    if (this.solo && this.solo.until > now) return this.solo.value
+    const value = (await countActiveUsers(this.brain)) <= 1
+    this.solo = { value, until: now + NEGATIVE_MS }
+    return value
+  }
+
+  /** Who a request acts as. A token acts as its creator; the old shared token and open mode act as the first admin. */
+  private async principalFor(user: UserRecord | null): Promise<Principal | null> {
+    const solo = await this.isSolo()
+    const acting = user ?? (await firstAdmin(this.brain))
+    if (!acting) return SOLO_PRINCIPAL
+    if (acting.status === 'disabled') return null
+    return principalOf(acting, solo)
   }
 
   private async hasManagedTokens(): Promise<boolean> {
@@ -52,7 +83,7 @@ export class Authenticator {
   }
 
   async check(req: IncomingMessage): Promise<AuthResult> {
-    if (this.options.noAuth) return { ok: true, kind: 'open', name: 'open' }
+    if (this.options.noAuth) return { ok: true, kind: 'open', name: 'open', principal: (await this.principalFor(null)) ?? SOLO_PRINCIPAL }
 
     const header = req.headers.authorization ?? ''
     const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
@@ -60,7 +91,10 @@ export class Authenticator {
     if (bearer && this.options.envToken) {
       const a = digest(bearer)
       const b = digest(this.options.envToken)
-      if (timingSafeEqual(a, b)) return { ok: true, kind: 'env', name: 'env' }
+      if (timingSafeEqual(a, b)) {
+        const principal = await this.principalFor(null)
+        if (principal) return { ok: true, kind: 'env', name: 'env', principal }
+      }
     }
 
     if (bearer) {
@@ -69,15 +103,16 @@ export class Authenticator {
       const cached = this.good.get(key)
       if (cached && cached.until > now) {
         this.touch(cached.id, now)
-        return { ok: true, kind: 'managed', name: cached.name }
+        return { ok: true, kind: 'managed', name: cached.name, principal: cached.principal }
       }
       if ((this.bad.get(key) ?? 0) > now) return { ok: false, reason: 'invalid' }
 
       const found = await findApiToken(this.brain, bearer)
-      if (found) {
-        this.good.set(key, { ...found, until: now + POSITIVE_MS })
+      const principal = found ? await this.principalFor(found.user) : null
+      if (found && principal) {
+        this.good.set(key, { id: found.id, name: found.name, principal, until: now + POSITIVE_MS })
         this.touch(found.id, now)
-        return { ok: true, kind: 'managed', name: found.name }
+        return { ok: true, kind: 'managed', name: found.name, principal }
       }
       if (this.bad.size > 500) this.bad.clear()
       this.bad.set(key, now + NEGATIVE_MS)

@@ -75,7 +75,7 @@ export async function mount(container, { query }) {
 
   // ---- connect -------------------------------------------------------------
   const origin = h('input', { class: 'input mono', value: location.origin, 'aria-label': 'Server address', style: { width: '280px' } })
-  const projectSelect = h('select', { 'aria-label': 'Project' }, projects.map(p => h('option', { value: p.id }, p.id)), h('option', { value: '' }, 'A new project id…'))
+  const projectSelect = h('select', { 'aria-label': 'Project' }, projects.map(p => h('option', { value: p.id }, p.name)), h('option', { value: '' }, 'A project name or id…'))
   const customProject = h('input', { class: 'input', placeholder: 'project-id', 'aria-label': 'Project id', style: { display: 'none', width: '160px' } })
   if (query.project) projectSelect.value = query.project
   else if (!projects.length) projectSelect.value = ''

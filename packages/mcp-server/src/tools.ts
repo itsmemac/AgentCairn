@@ -1,9 +1,11 @@
 import {
+  AccessError,
   MAX_BRIEFING_TOKENS,
   MEMORY_KINDS,
   MemoryValidationError,
   MIN_BRIEFING_TOKENS,
   ProjectMissingError,
+  ProjectNameError,
   ProjectNotFoundError,
   RemoteConflictError,
   SupersedeError,
@@ -41,6 +43,8 @@ export function describeError(error: unknown): string {
     error instanceof UnresolvedProjectError ||
     error instanceof ProjectNotFoundError ||
     error instanceof ProjectMissingError ||
+    error instanceof ProjectNameError ||
+    error instanceof AccessError ||
     error instanceof RemoteConflictError
   ) {
     return error.message
@@ -106,7 +110,11 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
     },
     guard(async ({ max_tokens }) => {
       const project = await ctx.project({ write: false })
-      const briefing = await buildBriefing(ctx.brain, project.projectId, { maxTokens: max_tokens, cwd: ctx.cwd })
+      const briefing = await buildBriefing(ctx.brain, project.projectId, {
+        maxTokens: max_tokens,
+        cwd: ctx.cwd,
+        label: project.isNew ? (project.requested ?? project.suggestedName) : undefined,
+      })
       return ok(briefing.text)
     }),
   )
@@ -235,7 +243,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
       inputSchema: { id: z.string().min(6).describe('Memory id or unique prefix, e.g. abc12345') },
     },
     guard(async ({ id }) => {
-      const project = await ctx.project({ write: false })
+      const project = await ctx.project({ write: false, action: 'memory.delete' })
       const gone = await forgetMemory(ctx.brain, project.projectId, id.replace(/^#/, ''))
       if (!gone) return fail(`No memory matches "${id}" in this project.`)
       const restored = gone.restored.length ? ` Restored ${gone.restored.length} earlier memory(ies).` : ''
@@ -259,7 +267,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
       const total = [...counts.values()].reduce((a, b) => a + b, 0)
       const lines = [
         `Neo4j: ${info.agent} at ${config.uri} (schema v${await schemaVersion(ctx.brain)})`,
-        `Project: ${project.projectId} (via ${project.source === 'link' ? 'explicit project id' : 'git remote'}${project.isNew ? ', no memories yet' : ''})`,
+        `Project: ${project.isNew ? (project.requested ?? project.suggestedName ?? project.projectId) : project.projectId} (via ${project.source === 'link' ? 'explicit project id' : 'git remote'}${project.isNew ? ', no memories yet' : ''})`,
         `Active memories: ${total}${total ? ` (${[...counts].map(([k, n]) => `${k} ${n}`).join(', ')})` : ''}`,
       ]
       if (ctx.cwd) lines.splice(2, 0, `Folder: ${ctx.cwd}`)

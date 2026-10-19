@@ -47,6 +47,9 @@ export function toPlain(value: unknown): unknown {
 
 export interface ProjectOverview {
   id: string
+  name: string
+  /** The owner's username; null for a project with no owner (a very old one). */
+  owner: string | null
   createdAt: string
   counts: Record<string, number>
   active: number
@@ -55,23 +58,28 @@ export interface ProjectOverview {
   lastMemoryAt: string | null
 }
 
-export async function listProjects(brain: Brain): Promise<ProjectOverview[]> {
-  const [mem, rem] = await Promise.all([
+/** `projectIds` limits the list to those projects (what a signed-in user may see); null or absent means all. */
+export async function listProjects(brain: Brain, options: { projectIds?: string[] | null } = {}): Promise<ProjectOverview[]> {
+  const ids = options.projectIds ?? null
+  const [mem, rem, own] = await Promise.all([
     brain.run(
-      `MATCH (p:Project)
+      `MATCH (p:Project) WHERE $ids IS NULL OR p.id IN $ids
        OPTIONAL MATCH (m:Memory {projectId: p.id})
-       RETURN p.id AS id, toString(p.createdAt) AS createdAt, m.kind AS kind, m.status AS status,
+       RETURN p.id AS id, coalesce(p.name, p.id) AS name, toString(p.createdAt) AS createdAt, m.kind AS kind, m.status AS status,
               count(m) AS n, toString(max(m.createdAt)) AS last`,
+      { ids },
     ),
     brain.run('MATCH (r:Remote)-[:BELONGS_TO]->(p:Project) RETURN p.id AS id, count(r) AS n'),
+    brain.run("MATCH (u:User)-[:MEMBER_OF {role: 'owner'}]->(p:Project) RETURN p.id AS id, u.username AS owner"),
   ])
+  const owners = new Map(own.records.map(r => [r.get('id') as string, r.get('owner') as string]))
   const remotes = new Map(rem.records.map(r => [r.get('id') as string, Number(r.get('n'))]))
   const byId = new Map<string, ProjectOverview>()
   for (const row of mem.records) {
     const id = row.get('id') as string
     const p =
       byId.get(id) ??
-      { id, createdAt: row.get('createdAt') as string, counts: {}, active: 0, superseded: 0, remotes: remotes.get(id) ?? 0, lastMemoryAt: null }
+      { id, name: row.get('name') as string, owner: owners.get(id) ?? null, createdAt: row.get('createdAt') as string, counts: {}, active: 0, superseded: 0, remotes: remotes.get(id) ?? 0, lastMemoryAt: null }
     byId.set(id, p)
     const kind = row.get('kind') as string | null
     if (kind === null) continue
@@ -160,19 +168,19 @@ export interface Graph {
  * its areas and memories (the most important and recent first, up to `limit`)
  * linked by what they are about and what they replaced.
  */
-export async function getGraph(brain: Brain, options: { projectId?: string; limit?: number } = {}): Promise<Graph> {
+export async function getGraph(brain: Brain, options: { projectId?: string; projectIds?: string[] | null; limit?: number } = {}): Promise<Graph> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 300), 1), 1000)
   const nodes = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
   const edge = (type: GraphEdge['type'], source: string, target: string) =>
     edges.push({ id: `${type}:${source}>${target}`, source, target, type })
-  const where = options.projectId ? 'WHERE p.id = $projectId' : ''
-  const params = { projectId: options.projectId ?? null }
+  const where = 'WHERE ($projectId IS NULL OR p.id = $projectId) AND ($ids IS NULL OR p.id IN $ids)'
+  const params = { projectId: options.projectId ?? null, ids: options.projectIds ?? null }
 
-  const projects = await brain.run(`MATCH (p:Project) ${where} RETURN p.id AS id, toString(p.createdAt) AS createdAt`, params)
+  const projects = await brain.run(`MATCH (p:Project) ${where} RETURN p.id AS id, coalesce(p.name, p.id) AS name, toString(p.createdAt) AS createdAt`, params)
   for (const r of projects.records) {
     const id = r.get('id') as string
-    nodes.set(`p:${id}`, { id: `p:${id}`, type: 'project', label: id, data: { id, createdAt: r.get('createdAt') } })
+    nodes.set(`p:${id}`, { id: `p:${id}`, type: 'project', label: r.get('name') as string, data: { id, createdAt: r.get('createdAt') } })
   }
 
   const areas = await brain.run(

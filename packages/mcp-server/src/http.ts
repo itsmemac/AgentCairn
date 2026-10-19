@@ -1,11 +1,15 @@
 import { fileURLToPath } from 'node:url'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import {
+  AccessError,
   type Brain,
   MemoryValidationError,
+  type Principal,
   ProjectMissingError,
+  ProjectNameError,
   ProjectNotFoundError,
   RemoteConflictError,
+  SOLO_PRINCIPAL,
   type Staleness,
   UnresolvedProjectError,
   attachRemote,
@@ -74,6 +78,14 @@ function toHttpError(error: unknown): HttpError {
     return new HttpError(409, 'remote_conflict', error.message, { ownerProjectId: error.ownerProjectId })
   }
   if (error instanceof UnresolvedProjectError) return new HttpError(400, 'unresolved_project', error.message)
+  if (error instanceof AccessError) {
+    return error.code === 'not_found'
+      ? new HttpError(404, 'project_not_found', error.message, { projectId: error.projectId })
+      : new HttpError(403, 'forbidden', error.message, { projectId: error.projectId, action: error.action })
+  }
+  if (error instanceof ProjectNameError) {
+    return new HttpError(error.code === 'exists' ? 409 : 400, error.code === 'ambiguous' ? 'ambiguous_project' : error.code === 'exists' ? 'project_exists' : 'invalid', error.message)
+  }
   if (error instanceof MemoryValidationError || error instanceof SupersedeError) {
     return new HttpError(400, 'invalid', error.message)
   }
@@ -179,8 +191,11 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
   const agentOf = (req: IncomingMessage) => header(req, 'user-agent')?.split(/[\s/]/)[0]
   /** The project each in-flight request resolved to, read when its event is recorded. */
   const resolved = new WeakMap<IncomingMessage, string>()
+  /** Who each authenticated request acts as. */
+  const principals = new WeakMap<IncomingMessage, Principal>()
+  const principalOf = (req: IncomingMessage): Principal => principals.get(req) ?? SOLO_PRINCIPAL
   const contextFor = (req: IncomingMessage) =>
-    new BrainContext(brain, { hint: hintOf(req) }, () => agentOf(req), id => resolved.set(req, id))
+    new BrainContext(brain, { hint: hintOf(req) }, () => agentOf(req), id => resolved.set(req, id), principalOf(req))
 
   async function handleMcp(req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
     if (req.method !== 'POST') {
@@ -191,7 +206,7 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
         id: null,
       })
     }
-    const server = createBrainServer(brain, { hint: hintOf(req) }, { agent: agentOf(req), onProject: id => resolved.set(req, id) })
+    const server = createBrainServer(brain, { hint: hintOf(req) }, { agent: agentOf(req), onProject: id => resolved.set(req, id), principal: principalOf(req) })
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     res.on('close', () => {
       void transport.close()
@@ -213,6 +228,8 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
       const info = await checkConnection(brain)
       return send(res, 200, {
         ...project,
+        // a project that does not exist (or is not yours to see) is reported by what was asked for
+        projectId: project.isNew ? (project.requested ?? project.suggestedName ?? project.projectId) : project.projectId,
         counts: Object.fromEntries(counts),
         total: [...counts.values()].reduce((a, b) => a + b, 0),
         schemaVersion: await schemaVersion(brain),
@@ -227,8 +244,9 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
       if (typeof body.remote === 'string' && !remote) throw new HttpError(400, 'invalid', 'remote is not a usable git remote.')
       const result = await registerProject(
         brain,
-        { projectId: typeof body.projectId === 'string' ? body.projectId : undefined, remoteHash: remote ? remoteHash(remote) : null },
+        { projectId: typeof body.projectId === 'string' ? body.projectId : undefined, remoteHash: remote ? remoteHash(remote) : null, remote },
         { allowCreate: body.allowCreate === true, forceRemote: body.forceRemote === true },
+        principalOf(req),
       )
       return send(res, 200, result)
     }
@@ -249,15 +267,15 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
         }
       }
       const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : undefined
-      return send(res, 200, await buildBriefing(brain, project.projectId, { maxTokens, staleness }))
+      return send(res, 200, await buildBriefing(brain, project.projectId, { maxTokens, staleness, label: project.isNew ? (project.requested ?? project.suggestedName) : undefined }))
     }
 
     if (path === '/api/remote' && method === 'POST') {
       const remote = typeof body.remote === 'string' ? normalizeRemoteHint(body.remote) : null
       if (!remote) throw new HttpError(400, 'invalid', 'remote is not a usable git remote.')
-      const project = await ctx.project({ write: false })
-      if (project.isNew) throw new ProjectNotFoundError(project.projectId)
-      await attachRemote(brain, project.projectId, remoteHash(remote), { force: body.force === true })
+      const project = await ctx.project({ write: false, action: 'project.update' })
+      if (project.isNew) throw new ProjectNotFoundError(project.requested ?? project.projectId)
+      await attachRemote(brain, project.projectId, remoteHash(remote), { force: body.force === true, principal: principalOf(req) })
       return send(res, 200, { projectId: project.projectId, remote })
     }
 
@@ -378,6 +396,7 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
           return
         }
 
+        principals.set(req, authResult.principal)
         const tap = tapResponse(res)
         let body: unknown
         res.on('finish', () => {

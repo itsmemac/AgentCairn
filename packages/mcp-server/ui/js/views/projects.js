@@ -18,7 +18,7 @@ export async function mount(container, { navigate }) {
     return h(
       'a',
       { class: 'card lift', href: `#/projects/${encodeURIComponent(p.id)}`, style: { color: 'inherit', textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '14px' } },
-      h('div', { class: 'row' }, h('h2', { class: 'mono grow', style: { overflowWrap: 'anywhere', fontSize: '15px' } }, p.id), now && h('span', { class: 'badge ok', title: `${now.requests} requests this session` }, h('span', { class: 'dot live' }), 'active')),
+      h('div', { class: 'row' }, h('div', { class: 'grow', style: { minWidth: 0 } }, h('h2', { style: { overflowWrap: 'anywhere', fontSize: '15px' } }, p.name), p.id !== p.name && h('div', { class: 'mono muted', style: { fontSize: '11.5px' } }, p.id)), now && h('span', { class: 'badge ok', title: `${now.requests} requests this session` }, h('span', { class: 'dot live' }), 'active')),
       h('div', { class: 'row', style: { alignItems: 'baseline', gap: '8px' } }, h('span', { style: { fontSize: '32px', fontWeight: 680, letterSpacing: '-0.025em' } }, fmt.int(p.active)), h('span', { class: 'muted' }, p.active === 1 ? 'memory' : 'memories')),
       kindBar(p.counts),
       h('div', { class: 'legend' }, top.slice(0, 4).map(k => h('span', null, h('i', { class: `sw k-${k}`, style: { background: 'var(--k)' } }), `${p.counts[k]} ${k}`)), top.length > 4 && h('span', { class: 'muted' }, `+${top.length - 4} more`)),
@@ -27,6 +27,7 @@ export async function mount(container, { navigate }) {
         { class: 'row muted', style: { fontSize: '12px', marginTop: 'auto', paddingTop: '10px', borderTop: '1px solid var(--border)' } },
         h('span', null, p.lastMemoryAt ? ['updated ', ago(p.lastMemoryAt)] : 'no memories yet'),
         h('span', { class: 'grow' }),
+        p.owner && h('span', null, `by ${p.owner}`),
         p.superseded > 0 && h('span', null, `${p.superseded} superseded`),
         h('span', null, `${p.remotes} remote${p.remotes === 1 ? '' : 's'}`),
         icon('arrow'),
@@ -36,7 +37,7 @@ export async function mount(container, { navigate }) {
 
   function draw() {
     const q = search.input.value.trim().toLowerCase()
-    const shown = projects.filter(p => p.id.toLowerCase().includes(q))
+    const shown = projects.filter(p => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
     if (!shown.length) {
       return grid.replaceChildren(h('div', { class: 'card', style: { gridColumn: '1 / -1' } }, projects.length ? emptyState('search', 'No project matches') : emptyState('folder', 'No projects yet', 'Create one here, or run `cairn init` in a repository.')))
     }
@@ -44,9 +45,9 @@ export async function mount(container, { navigate }) {
   }
   search.input.addEventListener('input', draw)
 
-  const idInput = h('input', { class: 'input mono', id: 'new-project', placeholder: 'project-id', maxlength: '64', 'aria-label': 'New project id' })
+  const idInput = h('input', { class: 'input mono', id: 'new-project', placeholder: 'Project name', maxlength: '64', 'aria-label': 'New project name' })
   const createBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Create')
-  const form = h('form', { class: 'toolbar', style: { display: 'none' } }, h('label', { class: 'dim', for: 'new-project' }, 'New project id'), idInput, createBtn, h('span', { class: 'hint' }, 'Letters, digits, ".", "_" or "-"; up to 64 characters.'))
+  const form = h('form', { class: 'toolbar', style: { display: 'none' } }, h('label', { class: 'dim', for: 'new-project' }, 'New project'), idInput, createBtn, h('span', { class: 'hint' }, 'Any name, up to 64 characters. It gets its own generated id.'))
   const newBtn = h('button', { class: 'btn', type: 'button' }, icon('plus'), 'New project')
   newBtn.addEventListener('click', () => {
     form.style.display = form.style.display === 'none' ? '' : 'none'
@@ -56,8 +57,8 @@ export async function mount(container, { navigate }) {
     e.preventDefault()
     createBtn.disabled = true
     try {
-      const r = await api('projects', { body: { id: idInput.value } })
-      if (!r.created) toast(`"${r.id}" already exists`)
+      const r = await api('projects', { body: { name: idInput.value } })
+      if (!r.created) toast(`"${r.name}" already exists`)
       navigate(`#/projects/${encodeURIComponent(r.id)}`)
     } catch (error) {
       toast(error.message)

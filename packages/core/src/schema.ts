@@ -1,11 +1,14 @@
 import type { Brain } from './db.js'
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 // Plain Cypher on Neo4j Community: no APOC, no enterprise-only features.
 export const SCHEMA_STATEMENTS = [
   'CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE',
-  'CREATE CONSTRAINT remote_hash IF NOT EXISTS FOR (r:Remote) REQUIRE r.hash IS UNIQUE',
+  'CREATE CONSTRAINT remote_key IF NOT EXISTS FOR (r:Remote) REQUIRE r.key IS UNIQUE',
+  'CREATE INDEX remote_hash IF NOT EXISTS FOR (r:Remote) ON (r.hash)',
+  'CREATE CONSTRAINT user_username IF NOT EXISTS FOR (u:User) REQUIRE u.username IS UNIQUE',
+  'CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE',
   'CREATE CONSTRAINT area_id IF NOT EXISTS FOR (a:Area) REQUIRE a.id IS UNIQUE',
   'CREATE CONSTRAINT memory_id IF NOT EXISTS FOR (m:Memory) REQUIRE m.id IS UNIQUE',
   'CREATE INDEX memory_project_kind IF NOT EXISTS FOR (m:Memory) ON (m.projectId, m.kind)',
@@ -44,23 +47,63 @@ export async function migrateContainment(brain: Brain): Promise<boolean> {
 }
 
 /**
+ * Users, ownership and per-project remote aliases (schema 4). Idempotent, and additive: the old
+ * `:Admin` label stays on accounts so an older server image keeps working during an upgrade.
+ *
+ * 1. every `:Admin` also becomes a `:User` (role admin, active, with an id);
+ * 2. every project gets a name (its id, for projects that predate names);
+ * 3. every project without an owner is owned by the first admin;
+ * 4. every git remote becomes an alias of one project (`key`), instead of one node per hash.
+ */
+export async function migrateUsers(brain: Brain): Promise<boolean> {
+  let changed = false
+  const ran = async (query: string) => {
+    const r = await brain.run(query)
+    if (Number(r.records[0]?.get('n') ?? 0) > 0) changed = true
+  }
+
+  await ran(
+    `MATCH (a:Admin) WHERE NOT a:User OR a.id IS NULL OR a.role IS NULL
+     SET a:User, a.id = coalesce(a.id, randomUUID()), a.role = coalesce(a.role, 'admin'), a.status = coalesce(a.status, 'active')
+     RETURN count(a) AS n`,
+  )
+  await ran('MATCH (p:Project) WHERE p.name IS NULL SET p.name = p.id RETURN count(p) AS n')
+  await ran(
+    `MATCH (u:User {role: 'admin'}) WITH u ORDER BY u.createdAt LIMIT 1
+     MATCH (p:Project) WHERE NOT (:User)-[:MEMBER_OF {role: 'owner'}]->(p)
+     MERGE (u)-[m:MEMBER_OF]->(p) ON CREATE SET m.since = datetime()
+     SET m.role = 'owner'
+     RETURN count(p) AS n`,
+  )
+  await ran(
+    `MATCH (r:Remote)-[:BELONGS_TO]->(p:Project) WHERE r.key IS NULL
+     SET r.key = p.id + ':' + r.hash
+     RETURN count(r) AS n`,
+  )
+  return changed
+}
+
+/**
  * Keeps the bookkeeping nodes from looking like stray data: the first-setup lock is removed once
  * an admin exists, and each access token is linked to the admin who created it.
  */
 export async function tidySystemNodes(brain: Brain): Promise<void> {
-  await brain.run("MATCH (l:BrainMeta {id: 'setup'}) WHERE EXISTS { MATCH (:Admin) } DELETE l")
+  await brain.run("MATCH (l:BrainMeta {id: 'setup'}) WHERE EXISTS { MATCH (a) WHERE a:User OR a:Admin } DELETE l")
   await brain.run(
     `MATCH (t:ApiToken) WHERE t.createdBy IS NOT NULL AND NOT ()-[:CREATED]->(t)
-     MATCH (a:Admin {username: toLower(t.createdBy)})
+     MATCH (a) WHERE (a:User OR a:Admin) AND a.username = toLower(t.createdBy)
      MERGE (a)-[:CREATED]->(t)`,
   )
 }
 
 export async function ensureSchema(brain: Brain): Promise<void> {
+  // the old one-remote-per-hash constraint would reject per-project aliases
+  await brain.run('DROP CONSTRAINT remote_hash IF EXISTS')
   for (const statement of SCHEMA_STATEMENTS) {
     await brain.run(statement)
   }
   await migrateContainment(brain)
+  await migrateUsers(brain)
   await tidySystemNodes(brain)
   await brain.run(
     `MERGE (m:BrainMeta {id: 'schema'})

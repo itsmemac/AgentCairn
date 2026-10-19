@@ -5,11 +5,12 @@ import { importance, openMemory } from './memoryDrawer.js'
 
 /** Deleting a project removes every memory under it, so it asks for the project's name first. */
 function confirmDelete(id, detail, navigate) {
-  const input = h('input', { class: 'input', placeholder: id, 'aria-label': 'Project name to confirm', autocomplete: 'off', spellcheck: 'false', style: { width: '100%' } })
+  const name = detail.name
+  const input = h('input', { class: 'input', placeholder: name, 'aria-label': 'Project name to confirm', autocomplete: 'off', spellcheck: 'false', style: { width: '100%' } })
   const error = h('p', { class: 'error', hidden: '' })
   const go = h('button', { class: 'btn danger', type: 'button', disabled: '' }, icon('trash'), 'Delete project')
   const memories = detail.active + detail.superseded
-  input.addEventListener('input', () => { go.disabled = input.value.trim() !== id })
+  input.addEventListener('input', () => { go.disabled = input.value.trim() !== name })
   go.addEventListener('click', async () => {
     go.disabled = true
     try {
@@ -28,7 +29,7 @@ function confirmDelete(id, detail, navigate) {
     h(
       'div',
       { class: 'stack' },
-      h('p', null, 'This permanently deletes ', h('b', { class: 'mono' }, id), ` and everything under it: ${fmt.int(memories)} ${memories === 1 ? 'memory' : 'memories'} (including superseded ones), ${fmt.int(detail.areas.length)} ${detail.areas.length === 1 ? 'area' : 'areas'} and ${fmt.int(detail.remotes)} git ${detail.remotes === 1 ? 'remote' : 'remotes'}. It cannot be undone.`),
+      h('p', null, 'This permanently deletes ', h('b', null, name), ` and everything under it: ${fmt.int(memories)} ${memories === 1 ? 'memory' : 'memories'} (including superseded ones), ${fmt.int(detail.areas.length)} ${detail.areas.length === 1 ? 'area' : 'areas'} and ${fmt.int(detail.remotes)} git ${detail.remotes === 1 ? 'remote' : 'remotes'}. It cannot be undone.`),
       h('p', { class: 'dim' }, 'Agents that still point at this project will simply create it again, empty, the next time they write.'),
       h('div', { class: 'field' }, h('label', null, 'Type the project name to confirm'), input),
       error,
@@ -105,7 +106,7 @@ export async function mount(container, { params, navigate }) {
     h(
       'div',
       { class: 'page-head' },
-      h('div', null, h('div', { class: 'crumbs' }, h('a', { href: '#/projects' }, 'Projects'), ' /'), h('h1', { class: 'mono', style: { fontSize: '22px' } }, id)),
+      h('div', null, h('div', { class: 'crumbs' }, h('a', { href: '#/projects' }, 'Projects'), ' /'), h('h1', { style: { fontSize: '22px' } }, detail.name), detail.name !== id && h('div', { class: 'mono muted', style: { fontSize: '12px' } }, id)),
       h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/graph?project=${encodeURIComponent(id)}`) }, icon('graph'), 'Open in graph'), h('button', { class: 'btn danger', type: 'button', onclick: () => confirmDelete(id, detail, navigate) }, icon('trash'), 'Delete'), h('button', { class: 'btn', type: 'button', onclick: () => navigate(`#/access?project=${encodeURIComponent(id)}`) }, icon('link'), 'Connect an agent')),
     ),
     h(

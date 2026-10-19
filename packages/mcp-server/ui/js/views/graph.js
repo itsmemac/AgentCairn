@@ -79,7 +79,7 @@ export async function mount(container, { query, navigate }) {
   let refreshTimer = null
 
   // ---- toolbar -------------------------------------------------------------
-  const projectSelect = h('select', { 'aria-label': 'Project' }, h('option', { value: '' }, 'All projects'), projects.map(p => h('option', { value: p.id }, `${p.id} · ${p.active}`)))
+  const projectSelect = h('select', { 'aria-label': 'Project' }, h('option', { value: '' }, 'All projects'), projects.map(p => h('option', { value: p.id }, `${p.name} · ${p.active}`)))
   projectSelect.value = project
   projectSelect.addEventListener('change', () => navigate(`#/graph${projectSelect.value ? `?project=${encodeURIComponent(projectSelect.value)}` : ''}`))
 

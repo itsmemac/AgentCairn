@@ -5,11 +5,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   type Brain,
+  deleteProject,
   loadConfig,
-  normalizeRemoteUrl,
   openBrain,
   remember,
-  remoteHash,
 } from '@agentcairn/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -22,12 +21,13 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
   const token = `tok-${randomBytes(8).toString('hex')}`
   const port = 20000 + Math.floor(Math.random() * 20000)
   const url = `http://127.0.0.1:${port}`
-  const remoteA = `https://example.com/${run}/app.git`
-  const idA = `git-${remoteHash(normalizeRemoteUrl(remoteA)!)}`
+  const remoteA = `https://example.com/${run}/${run}-app.git`
+  // projects get generated ids: filled in by the tests that create them
+  let idA = ''
+  let namedId = ''
   const named = `${run}-named`
-  const registeredRemote = `https://example.com/${run}/registered.git`
-  const forcedRemote = `https://example.com/${run}/forced.git`
-  const projectOf = (remote: string) => `git-${remoteHash(normalizeRemoteUrl(remote)!)}`
+  const registeredRemote = `https://example.com/${run}/${run}-registered.git`
+  const forcedRemote = `https://example.com/${run}/${run}-forced.git`
   const dirs: string[] = []
   const emptyHome = mkdtempSync(join(tmpdir(), 'cairn-home-'))
   dirs.push(emptyHome)
@@ -85,10 +85,16 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
 
   afterAll(async () => {
     server.kill()
-    const ids = [idA, named, projectOf(registeredRemote), projectOf(forcedRemote)]
-    await brain.run('MATCH (n) WHERE n.projectId IN $ids DETACH DELETE n', { ids })
-    await brain.run('MATCH (p:Project) WHERE p.id IN $ids DETACH DELETE p', { ids })
-    await brain.run('MATCH (r:Remote) WHERE NOT (r)-[:BELONGS_TO]->() DETACH DELETE r')
+    // every project a test made is linked from one of its folders (.cairn.json)
+    const made = new Set([idA, namedId].filter(Boolean))
+    for (const d of dirs) {
+      try {
+        made.add((JSON.parse(readFileSync(join(d, '.cairn.json'), 'utf8')) as { projectId: string }).projectId)
+      } catch {
+        // not a project folder
+      }
+    }
+    for (const id of made) await deleteProject(brain, id)
     await brain.close()
     for (const d of dirs) rmSync(d, { recursive: true, force: true })
   })
@@ -124,9 +130,10 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     const r = brainCli(a, ['init'])
     expect(r.err).toBe('')
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`Created project "${idA}"`)
+    expect(r.out).toContain(`Created project "${run}-app"`)
 
-    expect(JSON.parse(readFileSync(join(a, '.cairn.json'), 'utf8'))).toEqual({ projectId: idA })
+    idA = (JSON.parse(readFileSync(join(a, '.cairn.json'), 'utf8')) as { projectId: string }).projectId
+    expect(idA).toMatch(/^prj_[0-9a-f]{12}$/)
     const mcp = JSON.parse(readFileSync(join(a, '.mcp.json'), 'utf8'))
     expect(mcp.mcpServers['cairn']).toEqual({
       type: 'http',
@@ -162,7 +169,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     const before = files.map(f => readFileSync(join(a, f), 'utf8'))
     const r = brainCli(a, ['init'])
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`Linked to project "${idA}"`)
+    expect(r.out).toContain(`Linked to project "${run}-app"`)
     expect(files.map(f => readFileSync(join(a, f), 'utf8'))).toEqual(before)
   })
 
@@ -175,6 +182,8 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
 
     expect(brainCli(b, ['init', named, '--create', '--no-claude']).code).toBe(0)
     expect(existsSync(join(b, '.mcp.json'))).toBe(false)
+    namedId = (JSON.parse(readFileSync(join(b, '.cairn.json'), 'utf8')) as { projectId: string }).projectId
+    expect(namedId).toMatch(/^prj_/)
 
     const c = repo(`git@example.org:someone/mirror-${run}.git`)
     const linked = brainCli(c, ['init', named, '--personal'])
@@ -194,7 +203,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
     // the remote now belongs to `named`, so the original project is the one in conflict
     const back = brainCli(repo(remoteA), ['init', idA, '--no-claude'])
     expect(back.code).toBe(1)
-    expect(back.err).toContain(named)
+    expect(back.err).toContain(namedId)
     expect(brainCli(repo(remoteA), ['init', idA, '--force-remote', '--no-claude']).code).toBe(0)
   })
 

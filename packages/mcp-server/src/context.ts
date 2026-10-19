@@ -1,10 +1,18 @@
 import { hostname } from 'node:os'
 import {
+  PENDING,
+  ProjectNotFoundError,
+  type Action,
   type Brain,
+  type Principal,
   type ProjectHint,
   type ResolvedProject,
+  ProjectNameError,
   RemoteConflictError,
+  SOLO_PRINCIPAL,
   attachRemote,
+  authorize,
+  createProject,
   ensureProject,
   ensureSchema,
   getRepoState,
@@ -37,6 +45,8 @@ export class BrainContext {
     private readonly clientName: () => string | undefined = () => undefined,
     /** Told which project each call resolved to (the dashboard shows it). */
     private readonly onProject: (projectId: string) => void = () => undefined,
+    /** Who is asking. Every project use is checked against this. */
+    readonly principal: Principal = SOLO_PRINCIPAL,
   ) {}
 
   /** The folder, when the server can see one (stdio mode). */
@@ -58,26 +68,54 @@ export class BrainContext {
    * by its git remote (an explicit id is never auto-created here: `cairn init`
    * does that on purpose).
    */
-  async project(options: { write: boolean }): Promise<ResolvedProject> {
+  async project(options: { write: boolean; action?: Action }): Promise<ResolvedProject> {
     await this.ready()
     const project =
       'cwd' in this.scope
         ? await resolveProject(this.brain, this.scope.cwd)
-        : await resolveProjectFromHint(this.brain, this.scope.hint)
+        : await resolveProjectFromHint(this.brain, this.scope.hint, this.principal)
 
     this.onProject(project.projectId)
-    if (options.write && project.isNew && project.source === 'remote') {
-      await ensureProject(this.brain, project.projectId)
-      if (project.remoteHash) {
+    if (!project.isNew) {
+      await authorize(this.brain, this.principal, options.action ?? (options.write ? 'memory.write' : 'memory.read'), project.projectId)
+      return project
+    }
+    if (options.write && project.source === 'remote') {
+      const created = await this.createFromRemote(project)
+      this.onProject(created.projectId)
+      return created
+    }
+    // an explicit id or name is never created implicitly, and a project you cannot see reads as missing
+    if (options.write) throw new ProjectNotFoundError(project.requested ?? project.projectId.replace(PENDING, ''))
+    return project
+  }
+
+  /** First write from a repository nobody has a project for yet: a project owned by the caller, named after the repository. */
+  private async createFromRemote(project: ResolvedProject): Promise<ResolvedProject> {
+    let id = project.projectId
+    if (this.principal.userId === SOLO_PRINCIPAL.userId) {
+      // before any account exists there is nobody to own it: the plain legacy form
+      id = `git-${project.remoteHash}`
+      await ensureProject(this.brain, id)
+    } else {
+      const base = project.suggestedName ?? 'project'
+      for (let n = 1; ; n++) {
         try {
-          await attachRemote(this.brain, project.projectId, project.remoteHash)
+          id = (await createProject(this.brain, this.principal.userId, n === 1 ? base : `${base} (${n})`)).id
+          break
         } catch (error) {
-          if (!(error instanceof RemoteConflictError)) throw error
+          if (!(error instanceof ProjectNameError && error.code === 'exists') || n >= 20) throw error
         }
       }
-      return { ...project, isNew: false }
     }
-    return project
+    if (project.remoteHash) {
+      try {
+        await attachRemote(this.brain, id, project.remoteHash, { principal: this.principal })
+      } catch (error) {
+        if (!(error instanceof RemoteConflictError)) throw error
+      }
+    }
+    return { ...project, projectId: id, isNew: false }
   }
 
   /**

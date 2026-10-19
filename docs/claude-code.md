@@ -114,11 +114,11 @@ Inside Claude Code, the same commands are available as `/cairn <command>` (for e
 
 In this order:
 
-1. **An explicit project id**: the `X-Cairn-Project` header (from `.mcp.json`) or `.cairn.json`. Works even when git remotes differ (forks, mirrors, renamed repositories).
-2. **The git remote**, normalized (`git@github.com:Acme/App.git` and `https://github.com/acme/app` are the same) and stored only as a hash, never as a URL. Credentials in a remote are dropped before anything leaves your machine.
-3. Otherwise a new `git-<hash>` project is created from the remote on first write.
+1. **An explicit project**: the `X-Cairn-Project` header (from `.mcp.json`) or `.cairn.json`. It holds a project **id** (`prj_…`, generated when the project is created). A project **name** also works, among the projects you can access. Works even when git remotes differ (forks, mirrors, renamed repositories).
+2. **The git remote**, normalized (`git@github.com:Acme/App.git` and `https://github.com/acme/app` are the same) and stored only as a hash, never as a URL. Credentials in a remote are dropped before anything leaves your machine. It matches among **your own projects**: two people in one repository each get their own project unless one shares theirs.
+3. Otherwise a new project, owned by you and **named after the repository**, is created from the remote on first write.
 
-An explicit id is never created implicitly (a typo would start an empty brain); create it in the dashboard or with `cairn init <id> --create`.
+An explicit name or id is never created implicitly (a typo would start an empty project); create it in the dashboard or with `cairn init <name> --create`. Projects are private to their owner; see [Users, projects and access control](access-control.md).
 
 ## The hooks
 
@@ -146,7 +146,7 @@ Run `cairn doctor` first. It reports the server address, token, connectivity, pr
 - **`claude mcp list` shows `cairn` as failed.** Run the bridge by hand to see why: `npx -y agentcairn mcp` (it waits for input; press Ctrl+C). Typical causes: Node older than 20, the server address is not reachable from this computer (try `curl <address>/healthz`), or a wrong token (`401`).
 - **The `cairn` server shows as failed or unauthorized in Claude Code.** `CAIRN_URL` or `CAIRN_TOKEN` is missing from the environment Claude Code started in. Set them and restart the app.
 - **`401`**: the token is wrong or revoked; create a new one under **Access**.
-- **A project named `git-<letters and digits>` appeared.** `cairn init` with no id names the project after the git remote. To give the repository a real name instead, run `cairn init <name> --create --force-remote` (it moves the remote to the new project), then delete the empty `git-…` project from its page in the dashboard.
+- **Two projects have the same name.** Names may repeat; ids may not. Use the id (shown on the project page, and in `.cairn.json`) when a name is ambiguous.
 - **"Project … does not exist yet"**: create it under **Projects → New project**, or run `cairn init <id> --create`.
 - **The agent never uses Agent Cairn.** Install the hooks and `CLAUDE.md` block with `cairn init`, or add the instructions yourself.
 - **Memories show no commit or author.** The PreToolUse hook is not installed or not running; check `cairn doctor`.

@@ -26,6 +26,7 @@ An AI agent that opens your project cold has to read files, guess conventions an
 - **Memories know when they are stale.** Each memory records the commit and files it was written about. If those files have changed, the briefing flags it.
 - **History is kept.** A changed fact *supersedes* the old one rather than overwriting it, so concurrent agents cannot clobber each other and the reasoning trail survives.
 - **One memory per project, across machines.** A project is identified by an explicit id or by its (normalized, hashed) git remote, so every clone resolves to the same memory.
+- **Private by default, shared on purpose.** Projects belong to the user who made them and can be shared with other users as viewer, editor or maintainer. See [Users, projects and access control](docs/access-control.md).
 - **You can see everything.** A built-in dashboard shows every request as it happens, the memory graph, and lets you manage access.
 
 ## Quick start
@@ -113,6 +114,7 @@ Dark and light themes, phone-friendly. Request payloads are kept **in memory onl
 - [Self-hosting](docs/self-hosting.md): Docker, TLS, upgrades, backups, troubleshooting
 - [Unraid](docs/unraid.md): running it on an Unraid server
 - [Using it with Claude Code](docs/claude-code.md): connecting, project identity, hooks
+- [Users, projects and access control](docs/access-control.md): roles, sharing, how access is enforced
 - [Configuration](docs/configuration.md): every setting and file
 - [Architecture](docs/architecture.md): data model, briefings, staleness, security model
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)

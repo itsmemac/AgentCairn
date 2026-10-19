@@ -43,6 +43,10 @@ const NAV = [
   ['Explore', [['projects', 'Projects', 'folder'], ['graph', 'Graph', 'graph'], ['query', 'Query', 'terminal']]],
   ['Manage', [['access', 'Access', 'key'], ['system', 'System', 'server']]],
 ]
+/** Pages that show the whole server rather than your own projects: admins only. */
+const ADMIN_ONLY = new Set(['live', 'query', 'system'])
+let me = { role: 'admin', solo: true }
+
 const TITLES = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([key, label]) => [key, label])))
 
 export function navigate(hash) {
@@ -72,8 +76,9 @@ let shell = null
 
 function mountShell(username, version) {
   clear(root)
+  const visibleNav = NAV.map(([group, items]) => [group, items.filter(([key]) => me.role === 'admin' || !ADMIN_ONLY.has(key))]).filter(([, items]) => items.length)
   const brand = h('div', { class: 'brand' }, logo(), 'Agent Cairn', version && h('small', null, `v${version}`))
-  const links = NAV.flatMap(([group, items]) => [
+  const links = visibleNav.flatMap(([group, items]) => [
     h('div', { class: 'label' }, group),
     ...items.map(([key, label, ic]) => {
       const count = h('span', { class: 'count', dataset: { count: key } })
@@ -142,6 +147,7 @@ async function route() {
   const { path, query } = parseHash()
   const match = ROUTES.map(r => [r, r.pattern.exec(path)]).find(([, m]) => m)
   const [def, m] = match ?? [ROUTES[0], null]
+  if (me.role !== 'admin' && ADMIN_ONLY.has(def.nav)) return navigate('#/projects')
   const params = Object.fromEntries((def.params ?? []).map((name, i) => [name, decodeURIComponent(m?.[i + 1] ?? '')]))
 
   document.title = `${TITLES[def.nav] ?? 'Dashboard'} · Agent Cairn`
@@ -180,8 +186,9 @@ async function boot() {
   }
   if (state.setupRequired) return mountSetup(root, boot)
   if (!state.authenticated) return mountLogin(root, boot)
+  me = { role: state.role ?? 'admin', solo: state.solo ?? true }
   mountShell(state.username, state.version)
-  live.start()
+  if (me.role === 'admin') live.start()
   route()
 }
 

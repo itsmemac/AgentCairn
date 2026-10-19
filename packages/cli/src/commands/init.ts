@@ -72,7 +72,7 @@ export async function runInit(projectIdArg: string | undefined, flags: InitFlags
   if (!result) return
 
   await writeLink(local.dir, result.projectId)
-  out(`${result.created ? 'Created' : 'Linked to'} project "${result.projectId}".`)
+  out(`${result.created ? 'Created' : 'Linked to'} project "${result.name ?? result.projectId}" (id ${result.projectId}).`)
   out(`Wrote ${join(local.dir, '.cairn.json')}`)
   if (flags.personal) {
     out((await excludeLinkFile(local.dir)) ? '  (kept out of git via .git/info/exclude)' : '  (could not update .git/info/exclude)')

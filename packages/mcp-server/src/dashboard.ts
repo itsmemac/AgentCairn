@@ -7,26 +7,39 @@ import {
   type Brain,
   type MemoryKind,
   MEMORY_KINDS,
+  type Principal,
+  ProjectNameError,
   QueryRejectedError,
+  accessibleProjectIds,
+  authorize,
   changeAdminPassword,
   checkConnection,
   countActiveTokens,
+  countActiveUsers,
   countAdmins,
   createApiToken,
   createFirstAdmin,
+  createProject,
   deleteProject,
-  ensureProject,
+  findAccessibleProject,
   getGraph,
   getMemory,
   getMemoryChain,
   getProjectDetail,
   ensureSchema,
   getSystemInfo,
+  getUserByUsername,
   hasDefaultCredentials,
-  isValidProjectId,
+  isProjectRole,
   listApiTokens,
+  listMembers,
   listProjects,
+  listUsers,
   loadConfig,
+  migrateUsers,
+  principalOf,
+  removeMembership,
+  setMembership,
   recall,
   revokeApiToken,
   runReadOnlyCypher,
@@ -126,6 +139,24 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     return sessions.get(parseCookies(req)[SESSION_COOKIE])
   }
 
+  /** Who a signed-in dashboard session acts as. Looked up (briefly cached) so a disabled account loses access quickly. */
+  const principals = new Map<string, { principal: Principal | null; until: number }>()
+  async function principalFor(username: string): Promise<Principal> {
+    const cached = principals.get(username)
+    if (cached && cached.until > Date.now()) {
+      if (cached.principal) return cached.principal
+    } else {
+      const user = await getUserByUsername(brain, username)
+      const principal = user && user.status === 'active' ? principalOf(user, (await countActiveUsers(brain)) <= 1) : null
+      principals.set(username, { principal, until: Date.now() + 3000 })
+      if (principal) return principal
+    }
+    throw new HttpError(401, 'login_required', 'Sign in first.')
+  }
+  const requireAdmin = (principal: Principal): void => {
+    if (principal.role !== 'admin') throw new HttpError(403, 'forbidden', 'Only an admin can do that.')
+  }
+
   async function serveStatic(res: ServerResponse, path: string): Promise<void> {
     const vendored = vendor[path]
     let file: string
@@ -165,11 +196,14 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (route === 'state' && method === 'GET') {
       await ensureSetupGate()
       const session = sessionOf(req)
+      const me = session ? await principalFor(session.username).catch(() => null) : null
       return send(res, 200, {
         version: deps.version,
         setupRequired: (await adminCount()) === 0,
-        authenticated: Boolean(session),
-        username: session?.username ?? null,
+        authenticated: Boolean(session && me),
+        username: me ? session!.username : null,
+        role: me?.role ?? null,
+        solo: me?.solo ?? true,
       })
     }
 
@@ -183,6 +217,9 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       if (!setup.check(String(body.code ?? ''))) throw new HttpError(403, 'bad_code', 'That setup code is not right.')
       try {
         const admin = await createFirstAdmin(brain, String(body.username ?? ''), String(body.password ?? ''))
+        // projects made before there were accounts now belong to the first admin
+        await migrateUsers(brain)
+        auth.invalidate()
         setup.close()
         adminCache = undefined
         setupGuesses.reset(ip)
@@ -220,6 +257,8 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     // ---- everything below needs a session --------------------------------
     const session = sessionOf(req)
     if (!session) throw new HttpError(401, 'login_required', 'Sign in first.')
+    const principal = await principalFor(session.username)
+    const isAdmin = principal.role === 'admin'
 
     if (route === 'password' && method === 'POST') {
       const body = asRecord(await readJson(req, deps.maxBodyBytes))
@@ -240,21 +279,22 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       const started = Date.now()
       const info = await checkConnection(brain)
       const pingMs = Date.now() - started
-      const projects = await listProjects(brain)
+      const projects = await listProjects(brain, { projectIds: await accessibleProjectIds(brain, principal) })
       return send(res, 200, {
-        stats: events.stats(),
+        stats: isAdmin ? events.stats() : null,
         db: {
           projects: projects.length,
           memories: projects.reduce((a, p) => a + p.active, 0),
           superseded: projects.reduce((a, p) => a + p.superseded, 0),
-          tokens: await countActiveTokens(brain),
+          tokens: isAdmin ? await countActiveTokens(brain) : (await listApiTokens(brain, { createdBy: principal.username })).filter(t => !t.revokedAt).length,
         },
-        neo4j: { agent: info.agent, address: info.address, pingMs },
+        neo4j: isAdmin ? { agent: info.agent, address: info.address, pingMs } : null,
         server: { version: deps.version },
       })
     }
 
     if (route === 'events' && method === 'GET') {
+      requireAdmin(principal)
       const ok = q.get('ok')
       return send(res, 200, {
         events: events.recent({
@@ -271,24 +311,36 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
 
     const eventMatch = /^events\/(\d+)$/.exec(route)
     if (eventMatch && method === 'GET') {
+      requireAdmin(principal)
       const event = events.get(Number(eventMatch[1]))
       if (!event) throw new HttpError(404, 'not_found', 'That event has aged out of the buffer.')
       return send(res, 200, event)
     }
 
-    if (route === 'stream' && method === 'GET') return stream(req, res)
+    if (route === 'stream' && method === 'GET') {
+      requireAdmin(principal)
+      return stream(req, res)
+    }
 
-    if (route === 'projects' && method === 'GET') return send(res, 200, { projects: await listProjects(brain) })
+    if (route === 'projects' && method === 'GET') {
+      return send(res, 200, { projects: await listProjects(brain, { projectIds: await accessibleProjectIds(brain, principal) }) })
+    }
 
     if (route === 'projects' && method === 'POST') {
-      const id = String(asRecord(await readJson(req, deps.maxBodyBytes)).id ?? '').trim()
-      if (!isValidProjectId(id)) throw new HttpError(400, 'invalid', 'Project id: letters, digits, ".", "_" or "-", up to 64 characters.')
+      const body = asRecord(await readJson(req, deps.maxBodyBytes))
+      const name = String(body.name ?? body.id ?? '').trim()
       await ensureSchema(brain)
-      return send(res, 200, { id, ...(await ensureProject(brain, id)) })
+      // a name you already own is the same project, not a second one
+      const existing = await findAccessibleProject(brain, principal, name).catch(() => null)
+      const owned = existing && (await authorize(brain, principal, 'project.delete', existing.id).then(() => true, () => false))
+      if (existing && owned) return send(res, 200, { id: existing.id, name: existing.name, created: false })
+      const made = await createProject(brain, principal.userId, name)
+      return send(res, 200, { id: made.id, name: made.name, created: true })
     }
 
     const projectMatch = /^projects\/([^/]+)$/.exec(route)
     if (projectMatch && method === 'GET') {
+      await authorize(brain, principal, 'memory.read', decodeURIComponent(projectMatch[1]!))
       const detail = await getProjectDetail(brain, decodeURIComponent(projectMatch[1]!))
       if (!detail) throw new HttpError(404, 'not_found', 'No such project.')
       return send(res, 200, detail)
@@ -296,14 +348,45 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
 
     if (projectMatch && method === 'DELETE') {
       const id = decodeURIComponent(projectMatch[1]!)
+      await authorize(brain, principal, 'project.delete', id)
       const gone = await deleteProject(brain, id)
       if (!gone) throw new HttpError(404, 'not_found', 'No such project.')
       return send(res, 200, { id, ...gone })
     }
 
+    const membersMatch = /^projects\/([^/]+)\/members(?:\/([^/]+))?$/.exec(route)
+    if (membersMatch) {
+      const id = decodeURIComponent(membersMatch[1]!)
+      const userId = membersMatch[2] ? decodeURIComponent(membersMatch[2]) : undefined
+      if (method === 'GET' && !userId) {
+        await authorize(brain, principal, 'memory.read', id)
+        return send(res, 200, { members: await listMembers(brain, id) })
+      }
+      if (method === 'PUT' && userId) {
+        await authorize(brain, principal, 'member.manage', id)
+        const role = asRecord(await readJson(req, deps.maxBodyBytes)).role
+        if (!isProjectRole(role) || role === 'owner') throw new HttpError(400, 'invalid', 'Role must be viewer, editor or maintainer.')
+        await setMembership(brain, id, userId, role)
+        return send(res, 200, { members: await listMembers(brain, id) })
+      }
+      if (method === 'DELETE' && userId) {
+        // you may always leave a project; removing someone else needs member.manage
+        if (userId !== principal.userId) await authorize(brain, principal, 'member.manage', id)
+        else await authorize(brain, principal, 'memory.read', id)
+        if (!(await removeMembership(brain, id, userId))) throw new HttpError(404, 'not_found', 'That user is not a member.')
+        return send(res, 200, { members: await listMembers(brain, id) })
+      }
+    }
+
+    if (route === 'users' && method === 'GET') {
+      requireAdmin(principal)
+      return send(res, 200, { users: (await listUsers(brain)).map(u => ({ id: u.id, username: u.username, role: u.role, status: u.status, createdAt: u.createdAt })) })
+    }
+
     if (route === 'memories' && method === 'GET') {
       const project = q.get('project')
       if (!project) throw new HttpError(400, 'invalid', 'project is required.')
+      await authorize(brain, principal, 'memory.read', project)
       const kind = q.get('kind') as MemoryKind | null
       if (kind && !MEMORY_KINDS.includes(kind)) throw new HttpError(400, 'invalid', 'Unknown kind.')
       const status = q.get('status') ?? 'active'
@@ -321,16 +404,20 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
     if (memoryMatch && method === 'GET') {
       const project = q.get('project')
       if (!project) throw new HttpError(400, 'invalid', 'project is required.')
+      await authorize(brain, principal, 'memory.read', project)
       const memory = await getMemory(brain, project, decodeURIComponent(memoryMatch[1]!))
       if (!memory) throw new HttpError(404, 'not_found', 'No such memory.')
       return send(res, 200, { memory, chain: await getMemoryChain(brain, project, memory.id) })
     }
 
     if (route === 'graph' && method === 'GET') {
-      return send(res, 200, await getGraph(brain, { projectId: q.get('project') ?? undefined, limit: q.get('limit') ? Number(q.get('limit')) : undefined }))
+      const only = q.get('project') ?? undefined
+      if (only) await authorize(brain, principal, 'memory.read', only)
+      return send(res, 200, await getGraph(brain, { projectId: only, projectIds: await accessibleProjectIds(brain, principal), limit: q.get('limit') ? Number(q.get('limit')) : undefined }))
     }
 
     if (route === 'cypher' && method === 'POST') {
+      requireAdmin(principal)
       const body = asRecord(await readJson(req, deps.maxBodyBytes))
       try {
         return send(res, 200, await runReadOnlyCypher(brain, String(body.query ?? '')))
@@ -342,7 +429,9 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
       }
     }
 
-    if (route === 'tokens' && method === 'GET') return send(res, 200, { tokens: await listApiTokens(brain) })
+    if (route === 'tokens' && method === 'GET') {
+      return send(res, 200, { tokens: await listApiTokens(brain, isAdmin ? {} : { createdBy: principal.username }) })
+    }
 
     if (route === 'tokens' && method === 'POST') {
       const body = asRecord(await readJson(req, deps.maxBodyBytes))
@@ -358,12 +447,13 @@ export function createDashboard(deps: DashboardDeps): (req: IncomingMessage, res
 
     const tokenMatch = /^tokens\/([0-9a-f]+)$/.exec(route)
     if (tokenMatch && method === 'DELETE') {
-      if (!(await revokeApiToken(brain, tokenMatch[1]!))) throw new HttpError(404, 'not_found', 'No such active token.')
+      if (!(await revokeApiToken(brain, tokenMatch[1]!, isAdmin ? {} : { createdBy: principal.username }))) throw new HttpError(404, 'not_found', 'No such active token.')
       auth.invalidate()
       return send(res, 200, { ok: true })
     }
 
     if (route === 'system' && method === 'GET') {
+      requireAdmin(principal)
       const config = loadConfig()
       const started = Date.now()
       const info = await checkConnection(brain)

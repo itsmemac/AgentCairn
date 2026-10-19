@@ -140,7 +140,7 @@ describe.skipIf(!hasDb)('API tokens', () => {
 
   it('finds only live tokens and records use', async () => {
     const { info, token } = await createApiToken(brain, `t-${run}-ci`)
-    expect(await findApiToken(brain, token)).toEqual({ id: info.id, name: `t-${run}-ci` })
+    expect(await findApiToken(brain, token)).toEqual({ id: info.id, name: `t-${run}-ci`, user: null })
     expect(await findApiToken(brain, `${token}x`)).toBeNull()
     expect(await findApiToken(brain, '')).toBeNull()
 

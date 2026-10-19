@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
-import { type Brain, getMemory, loadConfig, openBrain, projectExists, remoteHash } from '@agentcairn/core'
+import { type Brain, deleteProject, findProjectByRemote, getMemory, loadConfig, openBrain, projectExists, remoteHash } from '@agentcairn/core'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,10 +13,13 @@ const shortIdIn = (s: string) => /#([0-9a-f]{8})/.exec(s)![1]!
 describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () => {
   const run = `t${randomBytes(4).toString('hex')}`
   const token = `tok-${randomBytes(8).toString('hex')}`
-  const remote = `example.com/${run}/app`
-  const remoteProject = `git-${remoteHash(remote)}`
+  const remote = `example.com/${run}/${run}-app`
+  // projects get generated ids: these are filled in as the tests create them
+  let remoteProject = ''
+  let explicitId = ''
   const explicit = `${run}-explicit`
   const aliasRemote = `example.com/${run}/alias`
+  const secondRemote = `example.com/${run}/second`
   const sha = 'a'.repeat(40)
   let brain: Brain
   let base: string
@@ -54,10 +57,11 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
 
   afterAll(async () => {
     await new Promise(r => server.close(r))
-    const ids = [remoteProject, explicit]
-    await brain.run('MATCH (n) WHERE n.projectId IN $ids DETACH DELETE n', { ids })
-    await brain.run('MATCH (p:Project) WHERE p.id IN $ids DETACH DELETE p', { ids })
-    await brain.run('MATCH (r:Remote) WHERE NOT (r)-[:BELONGS_TO]->() DETACH DELETE r')
+    const byRemote = await brain.run('MATCH (r:Remote)-[:BELONGS_TO]->(p:Project) WHERE r.hash IN $hashes RETURN DISTINCT p.id AS id', {
+      hashes: [remote, aliasRemote, secondRemote].map(remoteHash),
+    })
+    const ids = new Set([remoteProject, explicitId, ...byRemote.records.map(r => r.get('id') as string)].filter(Boolean))
+    for (const id of ids) await deleteProject(brain, id)
     await brain.close()
   })
 
@@ -86,7 +90,7 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
       expect(tools).toHaveLength(7)
 
       expect(text(await call(client, 'cairn_briefing'))).toContain('(empty)')
-      expect(await projectExists(brain, remoteProject)).toBe(false)
+      expect(await findProjectByRemote(brain, remoteHash(remote))).toBeNull()
 
       const r = await call(client, 'cairn_remember', {
         kind: 'gotcha',
@@ -97,12 +101,17 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
         author: 'Test User',
       })
       expect(r.isError).toBeUndefined()
+      remoteProject = (await findProjectByRemote(brain, remoteHash(remote)))!
+      expect(remoteProject).toMatch(/^prj_[0-9a-f]{12}$/)
       expect(await projectExists(brain, remoteProject)).toBe(true)
+      const named = await brain.run('MATCH (p:Project {id: $id}) RETURN p.name AS name', { id: remoteProject })
+      expect(named.records[0]?.get("name")).toBe(`${run}-app`)
       const m = await getMemory(brain, remoteProject, shortIdIn(text(r)))
       expect(m).toMatchObject({ commitSha: sha, author: 'Test User', paths: ['src/cache.ts'] })
 
       expect(text(await call(client, 'cairn_briefing'))).toContain('Cache is per-process')
       expect(text(await call(client, 'cairn_status'))).toContain(`Project: ${remoteProject} (via git remote)`)
+      expect(text(await call(client, 'cairn_briefing'))).toContain('Cache is per-process')
     } finally {
       await client.close()
     }
@@ -143,17 +152,22 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
     const created = await api('/api/init', {
       body: { projectId: explicit, remote: 'https://user:secret@Example.com/' + run + '/alias.git', allowCreate: true },
     })
-    expect(await created.json()).toEqual({ projectId: explicit, created: true, remoteAttached: true })
+    const made = await created.json()
+    expect(made).toEqual({ projectId: expect.stringMatching(/^prj_[0-9a-f]{12}$/), name: explicit, created: true, remoteAttached: true })
+    explicitId = made.projectId
+
+    // the same name is the same project, not a second one
+    expect(await (await api('/api/init', { body: { projectId: explicit } })).json()).toMatchObject({ projectId: explicitId, created: false })
 
     const conflict = await api('/api/init', { body: { projectId: remoteProject, remote: aliasRemote } })
     expect(conflict.status).toBe(409)
-    expect((await conflict.json()).ownerProjectId).toBe(explicit)
+    expect((await conflict.json()).ownerProjectId).toBe(explicitId)
 
     const forced = await api('/api/init', { body: { projectId: remoteProject, remote: aliasRemote, forceRemote: true } })
     expect(forced.status).toBe(200)
 
     expect((await api('/api/init', { body: { remote: 'not a remote' } })).status).toBe(400)
-    expect((await api('/api/init', { body: { projectId: 'bad id', allowCreate: true } })).status).toBe(400)
+    expect((await api('/api/init', { body: { projectId: '   ', allowCreate: true } })).status).toBe(400)
   })
 
   it('/api/project, /api/stale-inputs and /api/briefing work for a remote client', async () => {
@@ -179,8 +193,8 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
   })
 
   it('/api/remote adds an alias to an existing project only', async () => {
-    const other = `example.com/${run}/second`
-    const r = await api('/api/remote', { headers: { 'x-cairn-project': explicit }, body: { remote: other } })
+    const other = secondRemote
+    const r = await api('/api/remote', { headers: { 'x-cairn-project': explicitId }, body: { remote: other } })
     expect(r.status).toBe(200)
 
     const ghost = await api('/api/remote', { headers: { 'x-cairn-project': `${run}-ghost` }, body: { remote: other } })

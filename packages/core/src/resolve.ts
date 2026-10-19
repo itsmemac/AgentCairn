@@ -1,24 +1,47 @@
+import {
+  type Principal,
+  type ProjectRef,
+  AccessError,
+  ProjectNameError,
+  SOLO_PRINCIPAL,
+  authorize,
+  createProject,
+  findAccessibleProject,
+  nameFromRemote,
+  normalizeProjectName,
+} from './access.js'
 import type { Brain } from './db.js'
 import {
   findLink,
   getGitRemote,
-  isValidProjectId,
   normalizeRemoteHint,
   normalizeRemoteUrl,
   remoteHash,
   writeLink,
 } from './identity.js'
-import { attachRemote, ensureProject, findProjectByRemote, projectExists } from './registry.js'
+import { attachRemote, ensureProject, findProjectByRemote } from './registry.js'
 
 export type ResolutionSource = 'link' | 'remote'
 
+/**
+ * What `projectId` holds for a project that does not exist, or that the caller may not see. It can never
+ * equal a real id (ids have no colon), so using it to read data finds nothing, and nobody learns
+ * whether someone else's project exists.
+ */
+export const PENDING = 'pending:'
+
 export interface ResolvedProject {
+  /** The project's id, or a `pending:` placeholder when `isNew`. */
   projectId: string
+  /** What the caller asked for (an id or a name), when it matched nothing they can see. */
+  requested?: string
   source: ResolutionSource
   /** Hash of the git remote, when the folder has a usable one. */
   remoteHash: string | null
-  /** True when the project is not in the brain yet. */
+  /** True when the project is not in the brain yet (or not visible to the caller). */
   isNew: boolean
+  /** For a project known only by its git remote: what to call it when it is created. */
+  suggestedName?: string
 }
 
 export class UnresolvedProjectError extends Error {
@@ -44,106 +67,151 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
-async function currentRemoteHash(cwd: string): Promise<string | null> {
+async function currentRemote(cwd: string): Promise<string | null> {
   const raw = await getGitRemote(cwd)
-  const normalized = raw ? normalizeRemoteUrl(raw) : null
-  return normalized ? remoteHash(normalized) : null
+  return raw ? normalizeRemoteUrl(raw) : null
 }
 
-/** Project for a remote hash: an alias registered with a project, else a fresh `git-<hash>` id. */
-async function projectForRemote(brain: Brain, hash: string): Promise<ResolvedProject> {
-  const owner = await findProjectByRemote(brain, hash)
+/** Project for a remote hash among those the principal can access, else a placeholder id for one to be created. */
+async function projectForRemote(brain: Brain, hash: string, normalized: string, principal: Principal): Promise<ResolvedProject> {
+  const owner = await findProjectByRemote(brain, hash, principal)
   return owner
     ? { projectId: owner, source: 'remote', remoteHash: hash, isNew: false }
-    : { projectId: `git-${hash}`, source: 'remote', remoteHash: hash, isNew: true }
+    : { projectId: `${PENDING}${hash}`, source: 'remote', remoteHash: hash, isNew: true, suggestedName: nameFromRemote(normalized) }
 }
 
 /**
- * Order: `.cairn.json` link, then the git remote (an alias registered with
- * a project, else a fresh `git-<hash>` id). Read-only: never writes.
+ * Order: `.cairn.json` link (an id, or a name), then the git remote. Read-only: never writes.
+ * This is the local form, for a server that can see the folder (stdio mode): one user, no access checks.
  */
 export async function resolveProject(brain: Brain, cwd: string): Promise<ResolvedProject> {
-  const hash = await currentRemoteHash(cwd)
+  const normalized = await currentRemote(cwd)
+  const hash = normalized ? remoteHash(normalized) : null
 
   const link = await findLink(cwd)
   if (link) {
-    return {
-      projectId: link.projectId,
-      source: 'link',
-      remoteHash: hash,
-      isNew: !(await projectExists(brain, link.projectId)),
-    }
+    const found = await findAccessibleProject(brain, SOLO_PRINCIPAL, link.projectId)
+    return found
+      ? { projectId: found.id, source: 'link', remoteHash: hash, isNew: false }
+      : { projectId: `${PENDING}${link.projectId}`, requested: link.projectId, source: 'link', remoteHash: hash, isNew: true }
   }
 
-  if (!hash) throw new UnresolvedProjectError()
-  return projectForRemote(brain, hash)
+  if (!hash || !normalized) throw new UnresolvedProjectError()
+  return projectForRemote(brain, hash, normalized, SOLO_PRINCIPAL)
 }
 
 /** What a client that cannot be inspected (a remote server cannot read your repo) says about itself. */
 export interface ProjectHint {
+  /** A project id, or a project name. */
   projectId?: string
   /** A git remote, raw or already normalized (`host/owner/repo`). Credentials are dropped. */
   remote?: string
 }
 
-/** Same rules as `resolveProject`, but from what the client sent instead of from a folder. Read-only. */
-export async function resolveProjectFromHint(brain: Brain, hint: ProjectHint): Promise<ResolvedProject> {
+/**
+ * Same rules as `resolveProject`, but from what the client sent instead of from a folder, and only
+ * among the projects the principal can see. A project they cannot see looks exactly like one that does
+ * not exist. Read-only.
+ */
+export async function resolveProjectFromHint(brain: Brain, hint: ProjectHint, principal: Principal = SOLO_PRINCIPAL): Promise<ResolvedProject> {
   const normalized = hint.remote ? normalizeRemoteHint(hint.remote) : null
   const hash = normalized ? remoteHash(normalized) : null
 
   if (hint.projectId) {
-    if (!isValidProjectId(hint.projectId)) throw new Error(`Invalid project id "${hint.projectId}".`)
-    return {
-      projectId: hint.projectId,
-      source: 'link',
-      remoteHash: hash,
-      isNew: !(await projectExists(brain, hint.projectId)),
-    }
+    const key = normalizeProjectName(hint.projectId)
+    const found = await findAccessibleProject(brain, principal, key)
+    return found
+      ? { projectId: found.id, source: 'link', remoteHash: hash, isNew: false }
+      : { projectId: `${PENDING}${key}`, requested: key, source: 'link', remoteHash: hash, isNew: true }
   }
-  if (!hash) throw new UnresolvedProjectError('request')
-  return projectForRemote(brain, hash)
+  if (!hash || !normalized) throw new UnresolvedProjectError('request')
+  return projectForRemote(brain, hash, normalized, principal)
 }
 
 export interface RegisterOptions {
-  /** Allow creating the project when the id does not exist yet. */
+  /** Allow creating the project when it does not exist yet. */
   allowCreate?: boolean
-  /** Move the git remote from another project to this one. */
+  /** Move the git remote from another project of yours to this one. */
   forceRemote?: boolean
 }
 
 export interface RegisterResult {
   projectId: string
+  name: string
   created: boolean
   remoteAttached: boolean
 }
 
+/** A new project for this person. Before any account exists there is nobody to own it, so it is the plain legacy form. */
+async function createFor(brain: Brain, principal: Principal, name: string): Promise<ProjectRef> {
+  if (principal.userId === SOLO_PRINCIPAL.userId) {
+    const clean = normalizeProjectName(name)
+    await ensureProject(brain, clean)
+    return { id: clean, name: clean }
+  }
+  return createProject(brain, principal.userId, name)
+}
+
 /**
- * Database side of `cairn init`: makes sure the project exists and attaches
- * the git remote as an alias, so other clones with the same remote resolve to
- * the same project. Writes no files.
+ * Database side of `cairn init`: finds the project (by id, then by name, among those the caller can
+ * see), or creates it when allowed, and attaches the git remote as an alias so other clones resolve to
+ * the same project. Writes no files. With no id it uses the git remote, and a new project is named
+ * after the repository.
  */
 export async function registerProject(
   brain: Brain,
-  input: { projectId?: string; remoteHash?: string | null },
+  input: { projectId?: string; remoteHash?: string | null; remote?: string | null },
   options: RegisterOptions = {},
+  principal: Principal = SOLO_PRINCIPAL,
 ): Promise<RegisterResult> {
   const hash = input.remoteHash ?? null
 
-  let id = input.projectId
-  if (id === undefined) {
+  let ref: ProjectRef | null
+  let created = false
+  if (input.projectId !== undefined) {
+    const key = normalizeProjectName(input.projectId)
+    ref = await findAccessibleProject(brain, principal, key)
+    if (!ref) {
+      if (!options.allowCreate) throw new ProjectNotFoundError(key)
+      ref = await createFor(brain, principal, key)
+      created = true
+    }
+  } else {
     if (!hash) throw new UnresolvedProjectError()
-    id = (await findProjectByRemote(brain, hash)) ?? `git-${hash}`
-  } else if (!isValidProjectId(id)) {
-    throw new Error(`Invalid project id "${id}": use letters, digits, ".", "_" or "-" (max 64).`)
+    const existing = await findProjectByRemote(brain, hash, principal)
+    if (existing) {
+      const found = await findAccessibleProject(brain, principal, existing)
+      ref = found ?? { id: existing, name: existing }
+    } else {
+      const base = nameFromRemote(input.remote ?? hash)
+      ref = null
+      for (let n = 1; !ref; n++) {
+        try {
+          ref = await createFor(brain, principal, n === 1 ? base : `${base} (${n})`)
+        } catch (error) {
+          if (!(error instanceof ProjectNameError && error.code === 'exists') || n >= 20) throw error
+        }
+      }
+      created = true
+    }
   }
 
-  if (input.projectId !== undefined && !options.allowCreate && !(await projectExists(brain, id))) {
-    throw new ProjectNotFoundError(id)
+  let remoteAttached = false
+  if (hash) {
+    // linking a folder needs no rights on the project, but registering an alias for everyone needs maintainer
+    const allowed = await authorize(brain, principal, 'project.update', ref.id).then(
+      () => true,
+      error => {
+        if (error instanceof AccessError) return false
+        throw error
+      },
+    )
+    if (allowed) {
+      await attachRemote(brain, ref.id, hash, { force: options.forceRemote, principal })
+      remoteAttached = true
+    }
   }
-
-  const { created } = await ensureProject(brain, id)
-  if (hash) await attachRemote(brain, id, hash, { force: options.forceRemote })
-  return { projectId: id, created, remoteAttached: hash !== null }
+  return { projectId: ref.id, name: ref.name, created, remoteAttached }
 }
 
 export type InitOptions = RegisterOptions
@@ -159,7 +227,13 @@ export async function initProject(
   projectId?: string,
   options: InitOptions = {},
 ): Promise<InitResult> {
-  const result = await registerProject(brain, { projectId, remoteHash: await currentRemoteHash(dir) }, options)
+  const normalized = await currentRemote(dir)
+  const result = await registerProject(
+    brain,
+    { projectId, remoteHash: normalized ? remoteHash(normalized) : null, remote: normalized },
+    options,
+  )
   await writeLink(dir, result.projectId)
   return result
 }
+

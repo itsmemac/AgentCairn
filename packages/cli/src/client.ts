@@ -86,6 +86,7 @@ export interface ProjectInfo {
 
 export interface InitReply {
   projectId: string
+  name?: string
   created: boolean
   remoteAttached: boolean
 }

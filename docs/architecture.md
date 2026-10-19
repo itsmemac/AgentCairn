@@ -35,16 +35,16 @@ Containment is a tree: **Project → Area → Memory**.
 ```
 (Remote)-[:BELONGS_TO]->(Project)-[:HAS_AREA]->(Area)-[:HAS_MEMORY]->(Memory)
                                                          (Memory)-[:SUPERSEDES]->(Memory)
-(Admin)-[:CREATED]->(ApiToken)            (BrainMeta)   // schema version marker
+(User)-[:MEMBER_OF {role}]->(Project)      (User)-[:CREATED]->(ApiToken)      (BrainMeta)   // schema version marker
 ```
 
 | Node | Key properties |
 | --- | --- |
-| `Project` | `id` |
+| `Project` | `id` (generated, `prj_…`; older projects keep theirs), `name` |
 | `Area` | `id` (`<project>:<name>`), `projectId`, `name`. Memories filed without an area go to `general`. |
 | `Memory` | `id`, `projectId`, `kind`, `title`, `body`, `importance` (1–5), `status` (`active`/`superseded`), `paths`, `commitSha`, `author`, `agent`, `machine`, `createdAt` |
-| `Remote` | `hash`: a sha256 prefix of the normalized git remote, never the URL |
-| `Admin` | `username`, `passwordHash` (scrypt) |
+| `Remote` | `key` (`<project>:<hash>`), `hash`: a sha256 prefix of the normalized git remote, never the URL. One per project, so the same repository can map to different projects for different people |
+| `User` | `id`, `username`, `passwordHash` (scrypt), `role` (`admin`/`member`), `status` (`active`/`disabled`). Accounts from before users also keep an `Admin` label for now |
 | `ApiToken` | `id`, `name`, `hash` (sha256), `prefix`, `createdAt`, `lastUsedAt`, `revokedAt` |
 | `BrainMeta` | One row (`id: 'schema'`) holding the schema version |
 

@@ -99,11 +99,12 @@ describe.skipIf(!enabled)('against a live Neo4j', () => {
     expect(resolved).toMatchObject({ projectId: projects[0], source: 'remote', isNew: false })
   })
 
-  it('an unknown remote resolves to a fresh git-<hash> id without writing', async () => {
+  it('an unknown remote resolves to a placeholder, named after the repository, without writing', async () => {
     const dir = repo(`https://example.com/${run}/unseen.git`)
     const resolved = await resolveProject(brain, dir)
-    expect(resolved.projectId).toMatch(/^git-[0-9a-f]{16}$/)
-    expect(resolved).toMatchObject({ source: 'remote', isNew: true })
+    // a placeholder can never equal a real project id, so reading it finds nothing
+    expect(resolved.projectId).toMatch(/^pending:[0-9a-f]{16}$/)
+    expect(resolved).toMatchObject({ source: 'remote', isNew: true, suggestedName: 'unseen' })
     expect(await findProjectByRemote(brain, resolved.remoteHash!)).toBeNull()
   })
 
