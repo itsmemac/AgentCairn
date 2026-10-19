@@ -6,7 +6,6 @@ export const SCHEMA_VERSION = 4
 export const SCHEMA_STATEMENTS = [
   'CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE',
   'CREATE CONSTRAINT remote_key IF NOT EXISTS FOR (r:Remote) REQUIRE r.key IS UNIQUE',
-  'CREATE INDEX remote_hash IF NOT EXISTS FOR (r:Remote) ON (r.hash)',
   'CREATE CONSTRAINT user_username IF NOT EXISTS FOR (u:User) REQUIRE u.username IS UNIQUE',
   'CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE',
   'CREATE CONSTRAINT area_id IF NOT EXISTS FOR (a:Area) REQUIRE a.id IS UNIQUE',
@@ -97,7 +96,9 @@ export async function tidySystemNodes(brain: Brain): Promise<void> {
 }
 
 export async function ensureSchema(brain: Brain): Promise<void> {
-  // the old one-remote-per-hash constraint would reject per-project aliases
+  // The old one-remote-per-hash constraint would reject per-project aliases. Do not add an index on
+  // Remote.hash in its place: an older server image creates that constraint again at startup, and it
+  // cannot while an index on the same property exists (it would fail every request).
   await brain.run('DROP CONSTRAINT remote_hash IF EXISTS')
   for (const statement of SCHEMA_STATEMENTS) {
     await brain.run(statement)

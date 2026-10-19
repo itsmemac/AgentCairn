@@ -91,6 +91,25 @@ describe.skipIf(!process.env.NEO4J_URI)('users, sharing and visibility against a
     await brain.close()
   })
 
+  it('a database on this schema still accepts the startup statements of the previous server image', async () => {
+    // Upgrades are gradual: the old image may keep running against the same Neo4j for a while.
+    const previousImage = [
+      'CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE',
+      'CREATE CONSTRAINT remote_hash IF NOT EXISTS FOR (r:Remote) REQUIRE r.hash IS UNIQUE',
+      'CREATE CONSTRAINT area_id IF NOT EXISTS FOR (a:Area) REQUIRE a.id IS UNIQUE',
+      'CREATE CONSTRAINT memory_id IF NOT EXISTS FOR (m:Memory) REQUIRE m.id IS UNIQUE',
+      'CREATE INDEX memory_project_kind IF NOT EXISTS FOR (m:Memory) ON (m.projectId, m.kind)',
+      'CREATE FULLTEXT INDEX memory_text IF NOT EXISTS FOR (m:Memory) ON EACH [m.title, m.body]',
+      'CREATE CONSTRAINT brainmeta_id IF NOT EXISTS FOR (m:BrainMeta) REQUIRE m.id IS UNIQUE',
+      'CREATE CONSTRAINT admin_username IF NOT EXISTS FOR (a:Admin) REQUIRE a.username IS UNIQUE',
+      'CREATE CONSTRAINT token_id IF NOT EXISTS FOR (t:ApiToken) REQUIRE t.id IS UNIQUE',
+      'CREATE CONSTRAINT token_hash IF NOT EXISTS FOR (t:ApiToken) REQUIRE t.hash IS UNIQUE',
+    ]
+    await ensureSchema(brain)
+    for (const statement of previousImage) await brain.run(statement)
+    await ensureSchema(brain) // and the new code is happy after the old one has run
+  })
+
   it('generates unique ids; names repeat across owners but not within one', async () => {
     const a = await project(alice, 'shared-name')
     const b = await project(bob, 'shared-name')
