@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
-import { type Brain, countAdmins, ensureProject, ensureSchema, loadConfig, openBrain } from '@agentcairn/core'
+import { type Brain, countAdmins, deleteProject, ensureProject, ensureSchema, loadConfig, openBrain } from '@agentcairn/core'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -54,6 +54,8 @@ describe.skipIf(!hasDb)('dashboard without an admin account', () => {
   })
   afterAll(async () => {
     await s?.close()
+    const mine = await brain.run('MATCH (p:Project) WHERE p.name STARTS WITH $run RETURN p.id AS id', { run })
+    for (const r of mine.records) await deleteProject(brain, r.get('id') as string).catch(() => undefined)
     await brain.run('MATCH (n) WHERE n.projectId = $id DETACH DELETE n', { id: project })
     await brain.run('MATCH (p:Project {id: $id}) DETACH DELETE p', { id: project })
     await brain.close()
@@ -279,8 +281,9 @@ describe.skipIf(!adminSlotFree)('dashboard with the one-time setup code', () => 
   })
 
   it('deletes a project with everything under it, and only for a signed-in admin', async () => {
-    const id = `${run}-delete-me`
-    expect((await admin('projects', { body: { id } })).status).toBe(200)
+    const made = await admin('projects', { body: { name: `${run}-delete-me` } })
+    expect(made.status).toBe(200)
+    const id = ((await made.json()) as { id: string }).id
     expect((await admin(`projects/${id}`, { method: 'DELETE', cookie: '' })).status).toBe(401)
     expect((await admin(`projects/${id}`, { method: 'DELETE', headers: { origin: 'http://evil.example' } })).status).toBe(403)
 
@@ -407,9 +410,11 @@ describe.skipIf(!adminSlotFree)('dashboard with the one-time setup code', () => 
   })
 
   it('creates a project from the dashboard, idempotently, so an agent can start writing with just the header', async () => {
-    const id = `${run}-created`
-    expect(await json(await admin('projects', { body: { id } }))).toEqual({ id, created: true })
-    expect(await json(await admin('projects', { body: { id } }))).toEqual({ id, created: false })
+    const name = `${run}-created`
+    const first = (await json(await admin('projects', { body: { name } }))) as { id: string }
+    const id = first.id
+    expect(first).toEqual({ id: expect.any(String), name, created: true })
+    expect(await json(await admin('projects', { body: { name } }))).toEqual({ id, name, created: false })
     for (const bad of ['bad id!', '', '-lead', 'x'.repeat(65)]) expect((await admin('projects', { body: { id: bad } })).status, bad).toBe(400)
 
     const client = new Client({ name: 'new-project', version: '1' })

@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   type Brain,
+  countAdmins,
+  createUser,
   deleteProject,
+  ensureSchema,
   loadConfig,
   openBrain,
   recordHandoff,
@@ -33,6 +36,7 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
   const emptyHome = mkdtempSync(join(tmpdir(), 'cairn-home-'))
   dirs.push(emptyHome)
   let brain: Brain
+  let ownerName: string | null = null
   let server: ChildProcess
 
   const env = (extra: Record<string, string> = {}) => ({
@@ -69,6 +73,12 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
   beforeAll(async () => {
     expect(existsSync(bin) && existsSync(serve)).toBe(true)
     brain = openBrain(loadConfig())
+    // the shared token acts as the first admin; on an empty database (CI) there is none, so make one to own what the tests create
+    if ((await countAdmins(brain)) === 0) {
+      await ensureSchema(brain)
+      ownerName = `${run}-owner`
+      await createUser(brain, { username: ownerName, password: 'correct horse battery', role: 'admin' })
+    }
     server = spawn(process.execPath, [serve], {
       env: { ...process.env, CAIRN_TOKEN: token, CAIRN_PORT: String(port), CAIRN_HOST: '127.0.0.1' },
       stdio: 'ignore',
@@ -86,6 +96,8 @@ describe.skipIf(!process.env.NEO4J_URI)('brain CLI against a real server and Neo
 
   afterAll(async () => {
     server.kill()
+    if (ownerName) await brain.run('MATCH (u:User) WHERE u.username = $u DETACH DELETE u', { u: ownerName })
+
     // every project a test made is linked from one of its folders (.cairn.json)
     const made = new Set([idA, namedId].filter(Boolean))
     for (const d of dirs) {

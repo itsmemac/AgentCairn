@@ -79,8 +79,8 @@ describe.skipIf(!adminSlotFree)('admin accounts', () => {
     expect(winner.get('h')).toMatch(/^scrypt\$16384\$8\$1\$[0-9a-f]{32}\$[0-9a-f]{128}$/)
     expect(winner.get('h')).not.toContain(password)
 
-    expect(await verifyAdmin(brain, username, password)).toEqual({ username })
-    expect(await verifyAdmin(brain, username.toUpperCase(), password)).toEqual({ username })
+    expect(await verifyAdmin(brain, username, password)).toMatchObject({ username })
+    expect(await verifyAdmin(brain, username.toUpperCase(), password)).toMatchObject({ username })
     expect(await verifyAdmin(brain, username, `${password}x`)).toBeNull()
     expect(await verifyAdmin(brain, 'nobody-here', password)).toBeNull()
   })

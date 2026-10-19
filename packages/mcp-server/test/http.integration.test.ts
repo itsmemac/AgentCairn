@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
-import { type Brain, deleteProject, findProjectByRemote, getMemory, loadConfig, openBrain, projectExists, remoteHash } from '@agentcairn/core'
+import { type Brain, countAdmins, createUser, deleteProject, ensureSchema, findProjectByRemote, getMemory, loadConfig, openBrain, projectExists, remoteHash } from '@agentcairn/core'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -22,6 +22,7 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
   const secondRemote = `example.com/${run}/second`
   const sha = 'a'.repeat(40)
   let brain: Brain
+  let ownerName: string | null = null
   let base: string
   let server: ReturnType<typeof createHttpServer>
 
@@ -50,6 +51,12 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
 
   beforeAll(async () => {
     brain = openBrain(loadConfig())
+    // the shared token acts as the first admin; on an empty database (CI) there is none, so make one to own what the tests create
+    if ((await countAdmins(brain)) === 0) {
+      await ensureSchema(brain)
+      ownerName = `${run}-owner`
+      await createUser(brain, { username: ownerName, password: 'correct horse battery', role: 'admin' })
+    }
     server = createHttpServer(brain, { token })
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -62,6 +69,7 @@ describe.skipIf(!process.env.NEO4J_URI)('HTTP server against a live Neo4j', () =
     })
     const ids = new Set([remoteProject, explicitId, ...byRemote.records.map(r => r.get('id') as string)].filter(Boolean))
     for (const id of ids) await deleteProject(brain, id).catch(() => undefined)
+    if (ownerName) await brain.run('MATCH (u:User) WHERE u.username = $u DETACH DELETE u', { u: ownerName })
     await brain.close()
   })
 
