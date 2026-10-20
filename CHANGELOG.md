@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+- `cairn init` only tells you to set CAIRN_URL and CAIRN_TOKEN when it wrote a `.mcp.json` that needs them and they are not set; otherwise it just says to restart Claude Code.
+- `cairn_handoff` no longer fails when many files are changed (a merge can touch hundreds): the uncommitted-files list has no entry limit.
+- The graph looks like the Neo4j Browser: solid coloured nodes with the caption inside, arrows with the relationship type written along them, a node-label and relationship-type overview in the side panel, and a properties table for the selected node. A single project opens in a force layout.
+- Existing projects can be given generated `prj_…` ids; old links keep working by name.
+
 ## [0.2.0] - 2026-10-20
 
 - **Handoff and resume.** Another agent, on any machine, can pick up where the last one stopped. Sessions are now recorded as they happen (the user's requests, the agent's last message, files edited, commits, uncommitted work, branch and commit), by new UserPromptSubmit, PreCompact and SessionEnd hooks plus the Stop hook. A new `handoff` memory kind and the `cairn_handoff` tool let the agent write what is done, in progress, next, blocked and tried and dropped; `cairn_resume` and `cairn resume` return everything in full. The briefing opens with where the work was left, and the SessionStart hook checks this clone against it (a commit that was never pushed, uncommitted work on another machine). Prompts and replies are filtered for secrets on the machine and again on the server; `CAIRN_SESSION_CAPTURE=meta` sends no words and `off` sends nothing. Existing projects get the new hooks by running `cairn init` again.

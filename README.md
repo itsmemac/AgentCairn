@@ -98,7 +98,7 @@ More ways to connect, updating, uninstalling and troubleshooting are in [Using i
 | | |
 | --- | --- |
 | ![Memory graph](docs/images/graph.jpg) | ![A project's memories](docs/images/project.jpg) |
-| **Graph**: every project as a bubble sized by what it remembers; click one to open its areas, double-click to explore its memories. Quiet projects fade, and nodes glow when an agent reads or writes them. | **A project**: where the work was left, the recent sessions, and every memory, sorted newest first by default. |
+| **Graph**: in the style of the Neo4j Browser, with coloured nodes, labelled relationships, a node-label overview and a properties panel. Projects start as bubbles sized by what they remember; click one to open its areas, double-click to explore its memories. Nodes glow when an agent reads or writes them. | **A project**: where the work was left, the recent sessions, and every memory, sorted newest first by default. |
 
 ![Projects, in light mode](docs/images/projects-light.jpg)
 

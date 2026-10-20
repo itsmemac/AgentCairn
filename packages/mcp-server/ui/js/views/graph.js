@@ -8,7 +8,6 @@ const KIND_VAR = { handoff: '--s8', overview: '--s1', decision: '--s2', conventi
 const KIND_SHAPE = { handoff: 'octagon', overview: 'star', decision: 'diamond', convention: 'round-rectangle', gotcha: 'triangle', checkpoint: 'ellipse', thread: 'round-tag', glossary: 'pentagon' }
 const KIND_GLYPH = { handoff: '◼', overview: '★', decision: '◆', convention: '▢', gotcha: '▲', checkpoint: '●', thread: '▰', glossary: '⬟' }
 const WRITE_TOOLS = new Set(['cairn_remember', 'cairn_checkpoint', 'cairn_handoff', 'cairn_forget'])
-const LABEL_ZOOM = 1.15
 
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
@@ -23,35 +22,59 @@ function loadCytoscape() {
   })
 }
 
+/** Black or white caption, whichever reads better on this fill. */
+function inkOn(color) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim())
+  if (!m) return '#ffffff'
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.3 ? '#141415' : '#ffffff'
+}
+/** The fill colour of a kind, project or area: what the chips in the side panel use too. */
+export function nodeColor(type, kind) {
+  if (type === 'project') return css('--text')
+  if (type === 'area') return css('--text-2')
+  if (type === 'remote') return css('--muted')
+  return css(KIND_VAR[kind] ?? '--s1')
+}
+/** Mixes two #rrggbb colours (cytoscape does not understand color-mix). */
+function mix(a, b, amount) {
+  const p = c => [1, 3, 5].map(i => parseInt(c.replace('#', '').padEnd(6, '0').slice(i - 1, i + 1), 16))
+  const [x, y] = [p(a), p(b)]
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * amount).toString(16).padStart(2, '0')).join('')}`
+}
+const shorten = (text, max) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
+
 function stylesheet() {
-  const text = css('--text')
   const surface = css('--surface')
-  const axis = css('--axis')
   const muted = css('--muted')
   const accent = css('--s1')
   const pink = css('--s5')
+  const page = css('--page')
+  const circle = (type, kind) => {
+    const fill = nodeColor(type, kind)
+    return { 'background-color': fill, color: type === 'project' || type === 'area' ? page : inkOn(fill), 'border-color': mix(fill, type === 'project' || type === 'area' ? page : '#000000', 0.3) }
+  }
   return [
-    { selector: 'node', style: { 'font-size': 11, color: text, 'font-family': css('--sans'), 'text-valign': 'bottom', 'text-margin-y': 6, 'text-wrap': 'ellipsis', 'text-max-width': 130, 'text-outline-color': surface, 'text-outline-width': 3, 'border-width': 0, 'overlay-opacity': 0, 'underlay-color': accent, 'underlay-opacity': 0, 'underlay-padding': 6, 'underlay-shape': 'ellipse', label: '' } },
-    { selector: 'node[type="project"]', style: { label: 'data(label)', shape: 'ellipse', width: 64, height: 64, 'background-color': text, 'border-width': 6, 'border-color': accent, 'font-size': 13, 'font-weight': 700, 'text-max-width': 180, 'text-margin-y': 8, 'z-index': 10 } },
-    { selector: 'node[type="area"]', style: { label: 'data(label)', shape: 'hexagon', width: 40, height: 40, 'background-color': css('--raised'), 'border-width': 2, 'border-color': muted, 'font-weight': 600, 'z-index': 5 } },
-    { selector: 'node[type="remote"]', style: { shape: 'round-rectangle', width: 14, height: 14, 'background-color': muted, 'font-size': 10, color: muted } },
-    { selector: 'node[type="memory"]', style: { width: 'mapData(importance, 1, 5, 15, 32)', height: 'mapData(importance, 1, 5, 15, 32)', 'border-width': 1.5, 'border-color': surface } },
-    ...KINDS.map(kind => ({ selector: `node[kind="${kind}"]`, style: { 'background-color': css(KIND_VAR[kind]), shape: KIND_SHAPE[kind] } })),
-    { selector: 'node[status="superseded"]', style: { opacity: 0.42, 'border-style': 'dashed', 'border-color': muted, 'border-width': 2 } },
-    { selector: 'node.lbl', style: { label: 'data(label)' } },
-    { selector: 'edge', style: { width: 1.2, 'line-color': axis, 'curve-style': 'bezier', opacity: 0.85 } },
-    { selector: 'edge[type="HAS_AREA"]', style: { width: 2.4, 'line-color': muted } },
-    { selector: 'edge[type="BELONGS_TO"]', style: { 'line-style': 'dotted', 'line-color': muted } },
-    { selector: 'edge[type="SUPERSEDES"]', style: { 'line-style': 'dashed', 'line-color': pink, 'target-arrow-shape': 'triangle', 'target-arrow-color': pink, 'arrow-scale': 1.1, width: 1.8, 'curve-style': 'unbundled-bezier' } },
-    { selector: '.dim', style: { opacity: 0.1 } },
-    { selector: '.match', style: { 'border-width': 4, 'border-color': css('--warn-text'), label: 'data(label)' } },
+    { selector: 'node', style: { shape: 'ellipse', label: 'data(caption)', 'font-size': 9, 'font-weight': 600, color: '#fff', 'font-family': css('--sans'), 'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'wrap', 'text-max-width': 46, 'line-height': 1.15, 'min-zoomed-font-size': 7, 'border-width': 2, 'overlay-opacity': 0, 'underlay-color': accent, 'underlay-opacity': 0, 'underlay-padding': 6, 'underlay-shape': 'ellipse' } },
+    { selector: 'node[type="project"]', style: { ...circle('project'), width: 84, height: 84, 'font-size': 12, 'font-weight': 700, 'text-max-width': 70, 'z-index': 10 } },
+    { selector: 'node[type="area"]', style: { ...circle('area'), width: 62, height: 62, 'font-size': 10, 'text-max-width': 52, 'z-index': 5 } },
+    { selector: 'node[type="remote"]', style: { ...circle('remote'), width: 34, height: 34, 'font-size': 8, 'text-max-width': 30 } },
+    { selector: 'node[type="memory"]', style: { width: 'mapData(importance, 1, 5, 44, 66)', height: 'mapData(importance, 1, 5, 44, 66)', 'text-max-width': 48 } },
+    ...KINDS.map(kind => ({ selector: `node[kind="${kind}"]`, style: circle('memory', kind) })),
+    { selector: 'node[status="superseded"]', style: { opacity: 0.45, 'border-style': 'dashed', 'border-color': muted, 'border-width': 2 } },
+    { selector: 'edge', style: { width: 1.1, 'line-color': muted, opacity: 0.75, 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'target-arrow-color': muted, 'arrow-scale': 0.8, label: 'data(type)', 'font-size': 8, color: muted, 'font-family': css('--sans'), 'text-rotation': 'autorotate', 'text-background-color': surface, 'text-background-opacity': 1, 'text-background-padding': 2, 'min-zoomed-font-size': 8, 'text-margin-y': -1 } },
+    { selector: 'edge[type="BELONGS_TO"]', style: { 'line-style': 'dotted' } },
+    { selector: 'edge[type="SUPERSEDES"]', style: { 'line-style': 'dashed', 'line-color': pink, 'target-arrow-color': pink, color: pink, width: 1.6, 'curve-style': 'unbundled-bezier' } },
+    { selector: '.dim', style: { opacity: 0.12 } },
+    { selector: '.match', style: { 'border-width': 4, 'border-color': css('--warn-text'), 'underlay-color': css('--warn-text'), 'underlay-opacity': 0.25, 'underlay-padding': 7 } },
     { selector: '.hidden', style: { display: 'none' } },
     { selector: '.collapsed', style: { display: 'none' } },
-    { selector: 'node[type="project"].sized', style: { width: 'mapData(memories, 0, 60, 40, 100)', height: 'mapData(memories, 0, 60, 40, 100)', 'font-size': 12, 'text-max-width': 120 } },
-    { selector: 'node[type="project"].quiet', style: { 'border-color': muted, opacity: 0.78 } },
-    { selector: 'node[type="project"].away', style: { opacity: 0.3 } },
-    { selector: 'node[type="project"].open', style: { 'border-color': css('--s3'), 'underlay-opacity': 0.14, 'underlay-padding': 12 } },
-    { selector: ':selected', style: { 'border-width': 4, 'border-color': accent, 'underlay-opacity': 0.22, 'underlay-padding': 9, label: 'data(label)' } },
+    { selector: 'node[type="project"].sized', style: { width: 'mapData(memories, 0, 120, 104, 160)', height: 'mapData(memories, 0, 120, 104, 160)', 'font-size': 12, 'text-max-width': 90 } },
+    { selector: 'node[type="project"].quiet', style: { opacity: 0.6 } },
+    { selector: 'node[type="project"].away', style: { opacity: 0.25 } },
+    { selector: 'node[type="project"].open', style: { 'underlay-opacity': 0.16, 'underlay-padding': 12 } },
+    { selector: ':selected', style: { 'border-width': 3, 'border-color': accent, 'underlay-opacity': 0.28, 'underlay-padding': 9 } },
+    { selector: 'edge:selected', style: { width: 2.2, 'line-color': accent, 'target-arrow-color': accent, opacity: 1 } },
   ]
 }
 
@@ -60,12 +83,12 @@ function layoutOptions(cy, name, overview = false) {
   const roots = cy.nodes('[type="project"]')
   switch (name) {
     case 'radial':
-      if (overview) return { name: 'concentric', concentric: n => n.data('memories') ?? 0, levelWidth: () => 25, minNodeSpacing: 70, spacingFactor: 1.2, avoidOverlap: true, padding: 40, animate: false }
+      if (overview) return { name: 'concentric', concentric: n => n.data('memories') ?? 0, levelWidth: () => 25, minNodeSpacing: 90, spacingFactor: 1.3, avoidOverlap: true, padding: 40, animate: false }
       return { name: 'breadthfirst', roots, circle: true, directed: false, spacingFactor: 1.05, avoidOverlap: true, padding: 40, animate: false }
     case 'tree':
       return { name: 'breadthfirst', roots, circle: false, directed: false, spacingFactor: 1.15, avoidOverlap: true, padding: 40, animate: false }
     case 'force':
-      return { name: 'cose', animate: false, randomize: true, nodeRepulsion: 12000, idealEdgeLength: 90, nodeOverlap: 24, gravity: 0.45, numIter: 1200, padding: 40 }
+      return { name: 'cose', animate: false, randomize: true, nodeRepulsion: 16000, idealEdgeLength: 110, nodeOverlap: 30, gravity: 0.35, numIter: 1200, nodeDimensionsIncludeLabels: false, padding: 40 }
     default:
       return { name: 'grid', animate: false, padding: 40, avoidOverlap: true }
   }
@@ -78,7 +101,7 @@ const QUIET_AFTER_DAYS = 21
 export async function mount(container, { query, navigate }) {
   const [{ projects }] = await Promise.all([api('projects'), loadCytoscape()])
   let project = query.project ?? ''
-  let layoutName = 'radial'
+  let layoutName = query.project ? 'force' : 'radial'
   let limit = 300
   let pulseOn = true
   let showSuperseded = true
@@ -160,7 +183,8 @@ export async function mount(container, { query, navigate }) {
   )
 
   // ---- graph ---------------------------------------------------------------
-  const element = n => ({ group: 'nodes', data: { ...n.data, mid: n.data.id, id: n.id, label: n.label, type: n.type } })
+  const caption = n => (n.type === 'project' ? shorten(n.label, 18) : n.type === 'area' ? shorten(n.label, 14) : n.type === 'remote' ? shorten(n.label, 8) : shorten(n.label, 30))
+  const element = n => ({ group: 'nodes', data: { ...n.data, mid: n.data.id, id: n.id, label: n.label, caption: caption(n), type: n.type } })
   const edgeEl = e => ({ group: 'edges', data: { id: e.id, source: e.source, target: e.target, type: e.type } })
 
   function runLayout(doFit) {
@@ -182,18 +206,13 @@ export async function mount(container, { query, navigate }) {
     const edges = cy.edges().filter(e => shown(e.source()) && shown(e.target())).length
     hudEl.textContent = `${nodes} nodes · ${edges} edges · ${cy.zoom().toFixed(2)}×`
   }
-  function syncLabels() {
-    if (!cy) return
-    const show = cy.zoom() >= LABEL_ZOOM
-    cy.nodes('[type="memory"]').toggleClass('lbl', show)
-  }
 
   /** The areas of a project fan out around it; everything else stays put. */
   function expand(node, animate = true) {
     if (node.data('type') !== 'project') return
     const areas = node.outgoers('node[type="area"]')
     const center = node.position()
-    const radius = 64 + areas.length * 7
+    const radius = 84 + areas.length * 8
     areas.forEach((a, i) => {
       const angle = (2 * Math.PI * i) / Math.max(areas.length, 1) - Math.PI / 2
       const spot = { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }
@@ -294,11 +313,10 @@ export async function mount(container, { query, navigate }) {
       if (search.input.value.trim()) return
       const around = e.target.closedNeighborhood()
       cy.elements().not(around).addClass('dim')
-      around.nodes('[type="memory"]').addClass('lbl')
     })
-    cy.on('mouseout', 'node', () => { if (!search.input.value.trim()) { cy.elements().removeClass('dim'); syncLabels() } })
+    cy.on('mouseout', 'node', () => { if (!search.input.value.trim()) { cy.elements().removeClass('dim') } })
     cy.on('dbltap', 'node[type="memory"]', e => openMemory(project, e.target.data('mid'), navigate))
-    cy.on('zoom', debounce(() => { syncLabels(); hud() }, 60))
+    cy.on('zoom', debounce(hud, 60))
 
     drawSide(null, graph)
     if (!project && query.focus) {
@@ -333,7 +351,7 @@ export async function mount(container, { query, navigate }) {
           const parent = graph.edges.map(e => (e.target === n.id ? e.source : e.source === n.id ? e.target : null)).find(id => id && cy.getElementById(id).nonempty())
           const origin = parent ? cy.getElementById(parent).position() : { x: cy.width() / 2, y: cy.height() / 2 }
           fresh.push(cy.add({ ...element(n), position: { x: origin.x + (Math.random() - 0.5) * 80, y: origin.y + (Math.random() - 0.5) * 80 } }))
-        } else existing.data({ ...n.data, mid: n.data.id, label: n.label })
+        } else existing.data({ ...n.data, mid: n.data.id, label: n.label, caption: caption(n) })
       }
       cy.nodes().forEach(n => { if (!incoming.has(n.id())) n.remove() })
       const ids = new Set(graph.edges.map(e => e.id))
@@ -350,7 +368,6 @@ export async function mount(container, { query, navigate }) {
       for (const n of fresh) setTimeout(() => pulse(n), 650)
     }
     applyFilters()
-    syncLabels()
     hud()
   }
 
@@ -375,6 +392,47 @@ export async function mount(container, { query, navigate }) {
     return groups
   }
 
+  /** Like Neo4j Browser's overview: one coloured pill per node label and one per relationship type. */
+  let focusedLabel = null
+  function highlightLabel(name) {
+    if (!cy) return
+    focusedLabel = focusedLabel === name ? null : name
+    cy.batch(() => {
+      cy.elements().removeClass('dim')
+      if (!focusedLabel) return
+      const hits = cy.nodes().filter(n => (n.data('type') === 'memory' ? n.data('kind') : n.data('type')) === focusedLabel)
+      cy.elements().not(hits).addClass('dim')
+    })
+    drawSide(null)
+  }
+  function labelChips() {
+    if (!cy) return []
+    const counts = new Map()
+    for (const n of cy.nodes()) {
+      const name = n.data('type') === 'memory' ? n.data('kind') : n.data('type')
+      const entry = counts.get(name) ?? { n: 0, type: n.data('type'), kind: n.data('kind') }
+      entry.n += 1
+      counts.set(name, entry)
+    }
+    return [...counts].map(([name, c]) => {
+      const fill = nodeColor(c.type, c.kind)
+      return h('button', { type: 'button', class: 'nlabel', 'aria-pressed': String(focusedLabel === name), style: { background: fill, color: inkOn(fill) }, onclick: () => highlightLabel(name) }, name, h('span', { class: 'n' }, fmt.int(c.n)))
+    })
+  }
+  function relationshipChips() {
+    if (!cy) return []
+    const counts = new Map()
+    for (const e of cy.edges()) counts.set(e.data('type'), (counts.get(e.data('type')) ?? 0) + 1)
+    return [...counts].map(([name, n]) => h('span', { class: 'rlabel' }, name, h('span', { class: 'n' }, fmt.int(n))))
+  }
+
+  /** The node's own fields, the way Neo4j Browser lists properties. */
+  function propertyTable(d) {
+    const skip = new Set(['id', 'mid', 'label', 'caption', 'type', 'memories', 'areas'])
+    const rows = [['id', d.mid], ...Object.entries(d).filter(([k, v]) => !skip.has(k) && v !== null && v !== undefined && v !== '')]
+    return h('table', { class: 'props' }, h('tbody', null, rows.map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, typeof v === 'object' ? JSON.stringify(v) : String(v))))))
+  }
+
   function drawSide(node, graph) {
     if (!node) {
       const counts = cy ? { project: cy.nodes('[type="project"]').length, area: cy.nodes('[type="area"]').length, memory: cy.nodes('[type="memory"]').length } : {}
@@ -384,20 +442,17 @@ export async function mount(container, { query, navigate }) {
           graph?.truncated && h('div', { class: 'callout warn' }, `Showing the ${limit} most important and recent memories. Raise the limit to see more.`),
           h('div', { class: 'row' }, ...Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => h('div', { class: 'stat', style: { marginRight: '14px' } }, h('b', null, fmt.int(n)), h('span', null, k === 'memory' ? 'memories' : `${k}${n === 1 ? '' : 's'}`)))),
           h('p', { class: 'dim', style: { margin: 0 } }, project ? 'Click a node to inspect it and double-click a memory to open it. Hover to follow its branch; zoom in to read memory titles.' : 'Click a project to open its areas and double-click it to explore its memories. Bigger bubbles remember more; faded ones have been quiet for three weeks. Use Areas to open them all.'),
-          h('h3', null, 'How to read it'),
-          h('div', { class: 'legend-list' },
-            h('div', null, h('span', { class: 'g' }, '◯'), 'project: the root'),
-            h('div', null, h('span', { class: 'g' }, '⬢'), 'area: a branch of the project'),
-            ...(project ? KINDS.map(k => h('div', { class: `k-${k}` }, h('span', { class: 'g', style: { color: 'var(--k)' } }, KIND_GLYPH[k]), k)) : [h('div', null, h('span', { class: 'g', style: { opacity: 0.5 } }, '◯'), 'faded project: nothing new in three weeks')]),
-            ...(project ? [h('div', null, h('span', { class: 'g', style: { opacity: 0.45 } }, '◆'), 'faded, dashed: superseded'), h('div', null, h('span', { class: 'g', style: { color: 'var(--s5)' } }, '⇢'), 'newer replaces older')] : []),
-          ),
-          h('p', { class: 'hint', style: { margin: 0 } }, project ? 'Size is importance. With live pulse on, a node glows when an agent reads or writes it.' : 'Bubble size is how many memories a project holds. With live pulse on, a project glows when an agent reads or writes it.'),
+          h('h3', null, 'Node labels'),
+          h('div', { class: 'chips' }, ...labelChips()),
+          h('h3', null, 'Relationship types'),
+          h('div', { class: 'chips' }, ...relationshipChips()),
+          h('p', { class: 'hint', style: { margin: 0 } }, project ? 'Size is importance. Click a label to highlight it. With live pulse on, a node glows when an agent reads or writes it.' : 'Bubble size is how many memories a project holds; faded ones are quiet. With live pulse on, a project glows when an agent reads or writes it.'),
         ),
       )
     }
     const d = node.data()
     const rows = [
-      h('div', { class: 'row tight' }, h('span', { class: 'badge' }, d.type), d.kind && h('span', { class: `kind k-${d.kind}` }, d.kind), d.status === 'superseded' && h('span', { class: 'badge auth' }, 'superseded')),
+      h('div', { class: 'row tight' }, h('span', { class: 'nlabel static', style: { background: nodeColor(d.type, d.kind), color: inkOn(nodeColor(d.type, d.kind)) } }, d.kind ?? d.type), d.status === 'superseded' && h('span', { class: 'badge auth' }, 'superseded')),
       h('h2', { style: { fontSize: '16px', overflowWrap: 'anywhere', lineHeight: 1.35 } }, d.label),
     ]
     if (d.type === 'memory') {
@@ -409,6 +464,7 @@ export async function mount(container, { query, navigate }) {
     } else if (d.type === 'remote') {
       rows.push(h('div', { class: 'dim' }, 'A git remote that maps to this project, stored as a hash.'), h('div', { class: 'mono muted' }, d.hash))
     }
+    rows.push(h('h3', null, 'Properties'), propertyTable(d))
     for (const [label, others] of relations(node)) {
       rows.push(h('h3', null, label), h('div', { class: 'stack', style: { gap: '3px' } }, ...others.slice(0, 8).map(other => h('a', { href: '#', onclick: ev => { ev.preventDefault(); other.select(); select(other); cy.animate({ center: { eles: other } }, { duration: 250 }) } }, other.data('label'))), others.length > 8 && h('span', { class: 'muted' }, `+${others.length - 8} more`)))
     }

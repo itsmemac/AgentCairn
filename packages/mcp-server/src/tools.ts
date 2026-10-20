@@ -88,7 +88,7 @@ const kindSchema = z.enum(MEMORY_KINDS)
 // handoffs are written with cairn_handoff, which also retires the one it replaces
 const writableKindSchema = z.enum(['overview', 'decision', 'convention', 'gotcha', 'checkpoint', 'thread', 'glossary'])
 const workspaceSchema = z
-  .object({ branch: z.string().optional(), head: z.string().optional(), dirty: z.array(z.string()).max(200).optional() })
+  .object({ branch: z.string().optional(), head: z.string().optional(), dirty: z.array(z.string()).optional() })
   .optional()
   .describe('Set automatically by hooks; leave empty')
 const lines = (what: string) => z.array(z.string().min(1).max(600)).max(30).optional().describe(what)

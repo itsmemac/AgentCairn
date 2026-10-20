@@ -231,7 +231,8 @@ describe.skipIf(!process.env.NEO4J_URI)('users and sharing through the server', 
         next: ['Members panel', 'Invite page'],
         dead_ends: ['Polling for changes: too chatty'],
         from_user: 'Do not push without asking',
-        workspace: { branch: 'main', head: 'c'.repeat(40), dirty: ['ui.js'] },
+        // a merge can leave hundreds of files changed: that must never make the handoff fail
+        workspace: { branch: 'main', head: 'c'.repeat(40), dirty: ['ui.js', ...Array.from({ length: 600 }, (_, n) => `src/f${n}.ts`)] },
       })
       expect(handed.isError).toBeUndefined()
       expect(text(handed)).toContain('Handoff #')

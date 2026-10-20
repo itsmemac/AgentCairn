@@ -18,6 +18,18 @@ export interface InitFlags {
   mcpJson?: boolean
 }
 
+/** What to tell the person to do next, from what init could see (it never claims a step is missing that is not). */
+export function nextSteps(state: { registered: boolean; wroteMcpJson: boolean; envSet: boolean }): string[] {
+  const restart = 'Next: restart Claude Code in this folder so the hooks load, and approve the "cairn" server if it asks. Run `cairn doctor` to check.'
+  if (state.wroteMcpJson && !state.registered && !state.envSet) {
+    return [
+      'Next: .mcp.json reads CAIRN_URL and CAIRN_TOKEN from the environment Claude Code starts in, and they are not set in this shell.',
+      'Set them there, then restart Claude Code here and approve the "cairn" server. Run `cairn doctor` to verify.',
+    ]
+  }
+  return [restart]
+}
+
 const read = (file: string) => readFile(file, 'utf8').catch(() => null)
 
 async function write(file: string, content: string): Promise<void> {
@@ -85,12 +97,15 @@ export async function runInit(projectIdArg: string | undefined, flags: InitFlags
 
   const identity = { projectId: result.projectId }
   const mcpFile = join(local.dir, '.mcp.json')
-  if (claudeRegistration().url && !flags.mcpJson) {
+  const registered = Boolean(claudeRegistration().url)
+  let wroteMcpJson = false
+  if (registered && !flags.mcpJson) {
     // A project .mcp.json named "cairn" would shadow the user-level server and needs CAIRN_URL and
     // CAIRN_TOKEN in the OS environment, which a one-line install does not set.
     out('Skipped .mcp.json: the cairn server is already registered for every project (claude mcp add --scope user). Use --mcp-json to commit one for your team.')
   } else {
     await write(mcpFile, mergeMcpConfig(await read(mcpFile), identity))
+    wroteMcpJson = true
     out(`Wrote ${mcpFile} (server entry; URL and token come from CAIRN_URL and CAIRN_TOKEN)`)
   }
 
@@ -114,6 +129,5 @@ export async function runInit(projectIdArg: string | undefined, flags: InitFlags
   out(`Updated ${mdFile}`)
 
   out('')
-  out('Next: make sure CAIRN_URL and CAIRN_TOKEN are set in the environment Claude Code runs in,')
-  out('then restart Claude Code here and approve the "cairn" server. Run `cairn doctor` to verify.')
+  for (const line of nextSteps({ registered, wroteMcpJson, envSet: Boolean(process.env.CAIRN_URL && process.env.CAIRN_TOKEN) })) out(line)
 }
