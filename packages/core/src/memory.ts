@@ -79,10 +79,42 @@ export class MemoryValidationError extends Error {
   }
 }
 
+export interface SupersedeProblem {
+  /** The id as it was given. */
+  id: string
+  reason: 'not_found' | 'ambiguous' | 'replaced'
+  /** For 'replaced': the active memories that replaced it, which is what to supersede instead. */
+  replacedBy: string[]
+}
+
+const short = (id: string) => `#${id.slice(0, 8)}`
+
 export class SupersedeError extends Error {
-  constructor(readonly ids: string[]) {
-    super('Cannot supersede: every id must be an active memory of this project.')
+  readonly ids: string[]
+  constructor(
+    ids: string[],
+    readonly problems: SupersedeProblem[] = [],
+  ) {
+    super(SupersedeError.describe(ids, problems))
+    this.ids = ids
     this.name = 'SupersedeError'
+  }
+
+  private static describe(ids: string[], problems: SupersedeProblem[]): string {
+    if (!problems.length) {
+      return `Cannot supersede ${ids.map(i => (i.startsWith('#') ? i : `#${i}`)).join(', ')}: it changed while this was being saved. Read it again and retry.`
+    }
+    const parts = problems.map(p => {
+      const id = p.id.startsWith('#') ? p.id : `#${p.id}`
+      if (p.reason === 'replaced') {
+        return p.replacedBy.length
+          ? `${id} was already replaced by ${p.replacedBy.map(short).join(', ')}: supersede that instead, or leave it if this write was already saved.`
+          : `${id} is already superseded.`
+      }
+      if (p.reason === 'ambiguous') return `${id} matches more than one memory: give more characters of the id.`
+      return `${id} is not a memory of this project (check the id, and that the project is the right one).`
+    })
+    return `Cannot supersede: ${parts.join(' ')} Nothing was written.`
   }
 }
 
@@ -238,16 +270,32 @@ export async function getMemory(brain: Brain, projectId: string, id: string): Pr
   return r.records.length === 1 ? toMemory(r.records[0]!) : null
 }
 
-/** Resolves full ids or unique prefixes to full ids; throws SupersedeError naming any that do not resolve. */
+/**
+ * Resolves full ids or unique prefixes to the ids of active memories. Throws a SupersedeError that says,
+ * for each id that does not qualify, why not: unknown, ambiguous, or already replaced (and by what).
+ */
 export async function resolveMemoryIds(brain: Brain, projectId: string, ids: readonly string[]): Promise<string[]> {
   const resolved: string[] = []
-  const missing: string[] = []
-  for (const id of ids) {
-    const m = await getMemory(brain, projectId, id)
-    if (m) resolved.push(m.id)
-    else missing.push(id)
+  const problems: SupersedeProblem[] = []
+  for (const raw of ids) {
+    const id = raw.replace(/^#/, '')
+    const found =
+      id.length >= MIN_ID_PREFIX
+        ? await brain.run(
+            `MATCH (m:Memory {projectId: $projectId}) WHERE m.id STARTS WITH $id
+             OPTIONAL MATCH (n:Memory {projectId: $projectId, status: 'active'})-[:SUPERSEDES*1..20]->(m)
+             RETURN m.id AS id, m.status AS status, collect(DISTINCT n.id) AS heads
+             LIMIT 3`,
+            { id, projectId },
+          )
+        : null
+    const rows = found?.records ?? []
+    if (rows.length === 0) problems.push({ id: raw, reason: 'not_found', replacedBy: [] })
+    else if (rows.length > 1) problems.push({ id: raw, reason: 'ambiguous', replacedBy: [] })
+    else if (rows[0]!.get('status') !== 'active') problems.push({ id: raw, reason: 'replaced', replacedBy: rows[0]!.get('heads') as string[] })
+    else resolved.push(rows[0]!.get('id') as string)
   }
-  if (missing.length) throw new SupersedeError(missing)
+  if (problems.length) throw new SupersedeError(problems.map(p => p.id), problems)
   return [...new Set(resolved)]
 }
 

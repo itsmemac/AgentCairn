@@ -110,10 +110,18 @@ describe.skipIf(!process.env.NEO4J_URI)('memories against a live Neo4j', () => {
     expect((await getMemory(brain, proj, a.id))?.status).toBe('active')
     expect((await getMemory(brain, other, foreign.id))?.status).toBe('active')
 
-    await remember(brain, proj, { ...base, title: 'Beta', body: 'beta', supersedes: [a.id] })
+    const beta = await remember(brain, proj, { ...base, title: 'Beta', body: 'beta', supersedes: [a.id] })
     await expect(
       remember(brain, proj, { ...base, title: 'Gamma', body: 'gamma', supersedes: [a.id] }),
     ).rejects.toBeInstanceOf(SupersedeError)
+
+    // the message says what is wrong with each id, and what to use instead
+    const reason = (ids: string[]) => remember(brain, proj, { ...base, title: 'Why', body: 'why', supersedes: ids }).then(() => '', (e: Error) => e.message)
+    expect(await reason([`#${a.id.slice(0, 8)}`])).toContain(`#${a.id.slice(0, 8)} was already replaced by #${beta.id.slice(0, 8)}`)
+    expect(await reason(['deadbeefdead'])).toContain('is not a memory of this project')
+    expect(await reason([foreign.id])).toContain('is not a memory of this project')
+    expect(await reason(['abc'])).toContain('is not a memory of this project')
+    expect(await reason([a.id, 'deadbeefdead'])).toMatch(/already replaced.*Nothing was written/s)
   })
 
   it('concurrent supersedes of one memory: exactly one wins', async () => {

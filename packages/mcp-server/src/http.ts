@@ -164,6 +164,10 @@ const textOf = (content: unknown): string | undefined =>
     ? content.map(c => (c as { text?: unknown }).text).filter((t): t is string => typeof t === 'string').join('\n')
     : undefined
 
+/** Optional protocol probes newer clients send first. "Method not found" is the expected answer, and they fall back, so it is not an error. */
+const OPTIONAL_PROBES = new Set(['server/discover'])
+const METHOD_NOT_FOUND = -32601
+
 const SHORT_ID = /#([0-9a-f]{8})\b/g
 const refsIn = (text: string | undefined): string[] => [...new Set([...(text ?? '').matchAll(SHORT_ID)].map(m => m[1]!))].slice(0, 60)
 
@@ -347,7 +351,11 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
       const result = asRecord(out.result)
       const failure = asRecord(out.error)
       responseText = textOf(result.content)
-      if (typeof failure.message === 'string') {
+      // an optional probe answered "method not found" is the expected outcome: kept in the feed, not counted as a failure
+      const probe = failure.code === METHOD_NOT_FOUND && OPTIONAL_PROBES.has(method)
+      if (probe) {
+        // nothing to flag
+      } else if (typeof failure.message === 'string') {
         ok = false
         error = failure.message
       } else if (result.isError === true) {
@@ -356,6 +364,7 @@ export function createBrainHttp(brain: Brain, options: HttpOptions = {}): BrainH
       }
       request = tool ? { tool, arguments: params.arguments } : rpc
       response = tool ? { text: responseText, isError: result.isError === true } : result
+      if (probe) response = { note: 'Not supported here; the client falls back to the standard handshake.' }
     } else {
       const out = asRecord(parsed)
       responseText = typeof out.text === 'string' ? out.text : undefined

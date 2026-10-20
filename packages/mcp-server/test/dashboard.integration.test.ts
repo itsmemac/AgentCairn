@@ -121,6 +121,23 @@ describe.skipIf(!hasDb)('dashboard without an admin account', () => {
     for (const noise of ['initialize', 'tools/list', 'notifications/initialized', 'mcp']) expect(names).not.toContain(noise)
   })
 
+  it('an optional discovery probe is answered "method not found" and is not counted as a failure', async () => {
+    const before = s.http.events.stats().totals.errors
+    const post = (method: string) =>
+      fetch(`${s.base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer env-token', 'x-cairn-project': project, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} }),
+      }).then(r => r.json() as Promise<{ error?: { code: number } }>)
+    expect((await post('server/discover')).error?.code).toBe(-32601)
+    const probe = s.http.events.recent().find(e => e.method === 'server/discover')!
+    expect(probe.ok).toBe(true)
+    expect(s.http.events.stats().totals.errors).toBe(before)
+    // any other unknown method is still a real error
+    expect((await post('nonsense/method')).error?.code).toBe(-32601)
+    expect(s.http.events.recent().find(e => e.method === 'nonsense/method')!.ok).toBe(false)
+  })
+
   it('capture=meta keeps the summary but not the payloads', async () => {
     const m = await start(brain, { token: 'env-token', capture: 'meta', noAuth: false })
     try {
