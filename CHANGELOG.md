@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
 - `cairn init` only tells you to set CAIRN_URL and CAIRN_TOKEN when it wrote a `.mcp.json` that needs them and they are not set; otherwise it just says to restart Claude Code.
 - `cairn_handoff` no longer fails when many files are changed (a merge can touch hundreds): the uncommitted-files list has no entry limit.
 - The graph looks like the Neo4j Browser: solid coloured nodes with the caption inside, arrows with the relationship type written along them, a node-label and relationship-type overview in the side panel, and a properties table for the selected node. A single project opens in a force layout.

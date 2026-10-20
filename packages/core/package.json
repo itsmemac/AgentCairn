@@ -1,6 +1,6 @@
 {
   "name": "@agentcairn/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Neo4j-backed memory layer for Agent Cairn: memories, briefings, project identity and accounts.",
   "license": "MIT",
   "keywords": [

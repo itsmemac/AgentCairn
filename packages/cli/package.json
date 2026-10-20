@@ -1,6 +1,6 @@
 {
   "name": "agentcairn",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The cairn command: link projects to a shared memory and wire Agent Cairn into Claude Code.",
   "license": "MIT",
   "keywords": [
@@ -40,7 +40,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agentcairn/core": "0.2.0"
+    "@agentcairn/core": "0.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
