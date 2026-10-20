@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-21
+
 - Clearer errors when a write tries to replace a memory: the message now says, per id, whether it is unknown, ambiguous or already replaced, and by which memory to use instead (a retried write used to fail with a generic line). Applies to `cairn_remember` and the threads a checkpoint resolves.
 - The Live feed no longer counts an optional `server/discover` probe (sent first by newer Claude Code) as an error; the server still answers it "method not found" and the client falls back.
 
