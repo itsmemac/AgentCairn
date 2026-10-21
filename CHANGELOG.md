@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+- Graph nodes have a shape per kind again, on top of the colour and the Neo4j-style look (octagon handoff, star overview, diamond decision, rounded square convention, triangle gotcha, circle checkpoint, tag thread, pentagon glossary, hexagon area), and the label pills show the same shape, so the graph can be read without telling colours apart.
+
+- Handoffs have an "Assumptions we are operating under" section (`assumptions` in `cairn_handoff`): what is taken as given and is not obvious from the code, so the next agent can check it instead of inheriting it silently.
+
 ## [0.2.3] - 2026-10-21
 
 - New logo (a stack of stones with a blue one on top) in the dashboard, favicon and a README header with light and dark variants.

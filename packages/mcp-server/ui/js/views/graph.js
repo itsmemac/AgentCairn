@@ -1,12 +1,27 @@
 import { api, qs } from '../api.js'
-import { debounce, fmt, h, icon, KINDS, searchBox } from '../dom.js'
+import { debounce, fmt, h, icon, KINDS, searchBox, svg } from '../dom.js'
 import { live } from '../store.js'
 import { importance, openMemory } from './memoryDrawer.js'
 
 const KIND_VAR = { handoff: '--s8', overview: '--s1', decision: '--s2', convention: '--s3', gotcha: '--s4', checkpoint: '--s5', thread: '--s6', glossary: '--s7' }
 // Seven kinds are more than hue alone can carry safely, so kind is also a shape.
 const KIND_SHAPE = { handoff: 'octagon', overview: 'star', decision: 'diamond', convention: 'round-rectangle', gotcha: 'triangle', checkpoint: 'ellipse', thread: 'round-tag', glossary: 'pentagon' }
-const KIND_GLYPH = { handoff: '◼', overview: '★', decision: '◆', convention: '▢', gotcha: '▲', checkpoint: '●', thread: '▰', glossary: '⬟' }
+// each node's outline as a 16x16 icon, for the pills, kept in step with KIND_SHAPE
+const SHAPE_PATH = {
+  octagon: 'M5 1.5h6L14.5 5v6L11 14.5H5L1.5 11V5z',
+  star: 'M8 1l2 5 5 .2-3.9 3.3L12.5 15 8 12l-4.5 3 1.4-5.5L1 6.2l5-.2z',
+  diamond: 'M8 1l7 7-7 7-7-7z',
+  'round-rectangle': 'M5 3h6a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z',
+  triangle: 'M8 2l7 12H1z',
+  ellipse: 'M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z',
+  'round-tag': 'M2 3h9l4 5-4 5H2z',
+  pentagon: 'M8 1.5l6.5 4.7L12 14H4L1.5 6.2z',
+  hexagon: 'M4.5 2h7L15 8l-3.5 6h-7L1 8z',
+}
+function shapeIcon(type, kind) {
+  const shape = type === 'memory' ? KIND_SHAPE[kind] : type === 'area' ? 'hexagon' : 'ellipse'
+  return svg('svg', { class: 'shape', viewBox: '0 0 16 16', width: 13, height: 13, 'aria-hidden': 'true' }, svg('path', { d: SHAPE_PATH[shape] ?? SHAPE_PATH.ellipse, fill: 'currentColor' }))
+}
 const WRITE_TOOLS = new Set(['cairn_remember', 'cairn_checkpoint', 'cairn_handoff', 'cairn_forget'])
 
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -57,10 +72,13 @@ function stylesheet() {
   return [
     { selector: 'node', style: { shape: 'ellipse', label: 'data(caption)', 'font-size': 9, 'font-weight': 600, color: '#fff', 'font-family': css('--sans'), 'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'wrap', 'text-max-width': 46, 'line-height': 1.15, 'min-zoomed-font-size': 7, 'border-width': 2, 'overlay-opacity': 0, 'underlay-color': accent, 'underlay-opacity': 0, 'underlay-padding': 6, 'underlay-shape': 'ellipse' } },
     { selector: 'node[type="project"]', style: { ...circle('project'), width: 84, height: 84, 'font-size': 12, 'font-weight': 700, 'text-max-width': 70, 'z-index': 10 } },
-    { selector: 'node[type="area"]', style: { ...circle('area'), width: 62, height: 62, 'font-size': 10, 'text-max-width': 52, 'z-index': 5 } },
+    { selector: 'node[type="area"]', style: { ...circle('area'), shape: 'hexagon', width: 66, height: 66, 'font-size': 10, 'text-max-width': 52, 'z-index': 5 } },
     { selector: 'node[type="remote"]', style: { ...circle('remote'), width: 34, height: 34, 'font-size': 8, 'text-max-width': 30 } },
     { selector: 'node[type="memory"]', style: { width: 'mapData(importance, 1, 5, 44, 66)', height: 'mapData(importance, 1, 5, 44, 66)', 'text-max-width': 48 } },
-    ...KINDS.map(kind => ({ selector: `node[kind="${kind}"]`, style: circle('memory', kind) })),
+    ...KINDS.map(kind => ({ selector: `node[kind="${kind}"]`, style: { ...circle('memory', kind), shape: KIND_SHAPE[kind] } })),
+    { selector: 'node[kind="decision"], node[kind="gotcha"], node[kind="overview"]', style: { width: 'mapData(importance, 1, 5, 58, 84)', height: 'mapData(importance, 1, 5, 58, 84)', 'text-max-width': 40, 'font-size': 8 } },
+    { selector: 'node[kind="gotcha"]', style: { 'text-margin-y': 7 } },
+    { selector: 'node[kind="glossary"], node[kind="handoff"], node[kind="thread"]', style: { width: 'mapData(importance, 1, 5, 48, 70)', height: 'mapData(importance, 1, 5, 48, 70)' } },
     { selector: 'node[status="superseded"]', style: { opacity: 0.45, 'border-style': 'dashed', 'border-color': muted, 'border-width': 2 } },
     { selector: 'edge', style: { width: 1.1, 'line-color': muted, opacity: 0.75, 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'target-arrow-color': muted, 'arrow-scale': 0.8, label: 'data(type)', 'font-size': 8, color: muted, 'font-family': css('--sans'), 'text-rotation': 'autorotate', 'text-background-color': surface, 'text-background-opacity': 1, 'text-background-padding': 2, 'min-zoomed-font-size': 8, 'text-margin-y': -1 } },
     { selector: 'edge[type="BELONGS_TO"]', style: { 'line-style': 'dotted' } },
@@ -156,7 +174,7 @@ export async function mount(container, { query, navigate }) {
   const hudEl = h('div', { class: 'graph-hud' })
   const kindChips = project
     ? KINDS.map(k => {
-        const chip = h('button', { class: `chip kindchip k-${k}`, type: 'button', 'aria-pressed': 'true', title: `Show or hide ${k} memories` }, h('i', { class: 'sw' }), `${KIND_GLYPH[k]} ${k}`)
+        const chip = h('button', { class: `chip kindchip k-${k}`, type: 'button', 'aria-pressed': 'true', title: `Show or hide ${k} memories` }, shapeIcon('memory', k), k)
         chip.addEventListener('click', () => { hiddenKinds.has(k) ? hiddenKinds.delete(k) : hiddenKinds.add(k); chip.setAttribute('aria-pressed', String(!hiddenKinds.has(k))); applyFilters() })
         return chip
       })
@@ -416,7 +434,7 @@ export async function mount(container, { query, navigate }) {
     }
     return [...counts].map(([name, c]) => {
       const fill = nodeColor(c.type, c.kind)
-      return h('button', { type: 'button', class: 'nlabel', 'aria-pressed': String(focusedLabel === name), style: { background: fill, color: inkOn(fill) }, onclick: () => highlightLabel(name) }, name, h('span', { class: 'n' }, fmt.int(c.n)))
+      return h('button', { type: 'button', class: 'nlabel', 'aria-pressed': String(focusedLabel === name), style: { background: fill, color: inkOn(fill) }, onclick: () => highlightLabel(name) }, shapeIcon(c.type, c.kind), name, h('span', { class: 'n' }, fmt.int(c.n)))
     })
   }
   function relationshipChips() {
@@ -452,7 +470,7 @@ export async function mount(container, { query, navigate }) {
     }
     const d = node.data()
     const rows = [
-      h('div', { class: 'row tight' }, h('span', { class: 'nlabel static', style: { background: nodeColor(d.type, d.kind), color: inkOn(nodeColor(d.type, d.kind)) } }, d.kind ?? d.type), d.status === 'superseded' && h('span', { class: 'badge auth' }, 'superseded')),
+      h('div', { class: 'row tight' }, h('span', { class: 'nlabel static', style: { background: nodeColor(d.type, d.kind), color: inkOn(nodeColor(d.type, d.kind)) } }, shapeIcon(d.type, d.kind), d.kind ?? d.type), d.status === 'superseded' && h('span', { class: 'badge auth' }, 'superseded')),
       h('h2', { style: { fontSize: '16px', overflowWrap: 'anywhere', lineHeight: 1.35 } }, d.label),
     ]
     if (d.type === 'memory') {

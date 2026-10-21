@@ -40,7 +40,7 @@ Then it grew the pieces a team needs to trust it: private projects, sharing, rol
 
 - **Agents write the memories.** Through MCP tools (`cairn_remember`, `cairn_checkpoint`) an agent records what it learns. The server never calls an LLM: no API key, no per-token cost, and it works with any MCP-capable agent.
 - **Briefings instead of crawling.** `cairn_briefing` assembles the most important memories for a project within a token budget: overview, conventions, gotchas, open threads, recent checkpoints, decisions.
-- **Another agent can pick up where you stopped.** Sessions are recorded as they happen (what you asked, the agent's last message, files, commits, uncommitted work), and the agent writes a handoff: done, in progress, next, blocked, tried and dropped. A new session, on any machine, opens with that and checks the repository against it. If your laptop dies, nothing has to be explained again. See [Handing work over](docs/claude-code.md#handing-work-over).
+- **Another agent can pick up where you stopped.** Sessions are recorded as they happen (what you asked, the agent's last message, files, commits, uncommitted work), and the agent writes a handoff: done, in progress, next, blocked, assumptions, tried and dropped. A new session, on any machine, opens with that and checks the repository against it. If your laptop dies, nothing has to be explained again. See [Handing work over](docs/claude-code.md#handing-work-over).
 - **Memories know when they are stale.** Each memory records the commit and files it was written about. If those files have changed, the briefing flags it.
 - **History is kept.** A changed fact *supersedes* the old one rather than overwriting it, so concurrent agents cannot clobber each other and the reasoning trail survives.
 - **One memory per project, across machines.** A project is identified by an explicit id or by its (normalized, hashed) git remote, so every clone resolves to the same memory.
@@ -129,7 +129,7 @@ The model, the permission matrix and the rollout are in [Users, projects and acc
 | --- | --- |
 | `cairn_briefing` | Start here: a budgeted briefing that opens with where the last work stopped, or onboarding instructions for an empty project |
 | `cairn_resume` | Pick up someone else's work: the full handoff, recent sessions, open threads, and how to check the repository |
-| `cairn_handoff` | Write where the work stands (done, in progress, next, blocked, tried and dropped) so the next agent can carry on |
+| `cairn_handoff` | Write where the work stands (done, in progress, next, blocked, assumptions, tried and dropped) so the next agent can carry on |
 | `cairn_recall` | Search memories by text, kind and area |
 | `cairn_remember` | Record a decision, convention, gotcha, overview, open thread or glossary term |
 | `cairn_checkpoint` | Record a finished goal, its decisions, and what is next |

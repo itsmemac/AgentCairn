@@ -241,13 +241,14 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
     {
       title: 'Hand the work over',
       description:
-        'Write down where the work stands so another agent, on another machine, can carry on without being told: what is done, what is in progress and its exact state, what to do next (in order), what is blocked or open, what was tried and dropped, and what the person asked that must keep being honoured. Call it when you stop with work unfinished, before a long break, or when the person says they are leaving. Replaces the previous handoff for the same topic (the branch by default).',
+        'Write down where the work stands so another agent, on another machine, can carry on without being told: what is done, what is in progress and its exact state, what to do next (in order), what is blocked or open, the assumptions you are working under, what was tried and dropped, and what the person asked that must keep being honoured. Call it when you stop with work unfinished, before a long break, or when the person says they are leaving. Replaces the previous handoff for the same topic (the branch by default).',
       inputSchema: {
         goal: z.string().min(1).max(200).describe('What this work is, in a line'),
         status: z.enum(HANDOFF_STATUSES).optional().describe('in_progress (default), blocked, paused or done'),
         in_progress: z.string().max(1500).optional().describe('What was mid-flight and its exact state: the file, the function, the half-finished step'),
         next: lines('What to do next, in order'),
         blockers: lines('Open questions and things waiting on a person'),
+        assumptions: lines('What you are taking as given that is not obvious from the code: environment, scope, constraints, things believed but not verified'),
         from_user: z.string().max(1500).optional().describe('What the person asked or said that the next agent must keep honouring (preferences, limits, "do not push")'),
         dead_ends: lines('What was tried and did not work, and why, so nobody repeats it'),
         done: lines('What is finished, concretely'),
@@ -264,7 +265,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         author: authorSchema,
       },
     },
-    guard(async ({ goal, status, in_progress, next, blockers, from_user, dead_ends, done, verify, decisions, paths, topic, workspace, commit_sha, author }) => {
+    guard(async ({ goal, status, in_progress, next, blockers, assumptions, from_user, dead_ends, done, verify, decisions, paths, topic, workspace, commit_sha, author }) => {
       const project = await ctx.project({ write: true })
       const r = await recordHandoff(ctx.brain, project.projectId, {
         goal,
@@ -272,6 +273,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         inProgress: in_progress,
         next,
         blockers,
+        assumptions,
         fromUser: from_user,
         deadEnds: dead_ends,
         done,

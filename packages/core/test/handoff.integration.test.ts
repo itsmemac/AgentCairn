@@ -28,12 +28,13 @@ describe('renderHandoff', () => {
       inProgress: 'Writing the invite page; accept() is half done',
       next: ['Finish accept()', 'Add tests'],
       blockers: ['Which mail provider?'],
+      assumptions: ['Only the NAS runs Neo4j 5+', 'Nobody uses the old shared token any more'],
       deadEnds: ['Tried magic links in the URL hash: the proxy strips it'],
       fromUser: 'Never push without asking.',
       verify: 'npm test',
       workspace: { branch: 'main', head: 'abcdef1234567', dirty: ['a.ts', 'b.ts'] },
     })
-    const order = ['Status: in progress', '## In progress', '## Next', '## Blocked or open', '## From the person', '## Tried and dropped', '## Done', '## How to check', '## Workspace']
+    const order = ['Status: in progress', '## In progress', '## Next', '## Blocked or open', '## Assumptions we are operating under', '## From the person', '## Tried and dropped', '## Done', '## How to check', '## Workspace']
     const at = order.map(h => text.indexOf(h))
     expect(at.every(i => i >= 0)).toBe(true)
     expect([...at].sort((a, b) => a - b)).toEqual(at)

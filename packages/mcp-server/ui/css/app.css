@@ -397,3 +397,5 @@ textarea { font-family: var(--mono); font-size: 13px; width: 100%; resize: verti
 .props th { text-align: left; font: 500 11.5px var(--mono); color: var(--muted); padding: 5px 10px 5px 0; vertical-align: top; white-space: nowrap; }
 .props td { padding: 5px 0; overflow-wrap: anywhere; border-top: 1px solid var(--border); }
 .props tr:first-child td { border-top: 0; }
+.kindchip .shape { color: var(--k); flex: none; }
+.nlabel .shape { flex: none; }

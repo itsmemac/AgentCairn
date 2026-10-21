@@ -39,6 +39,8 @@ export interface HandoffInput {
   next?: string[]
   /** Open questions and things waiting on a person. */
   blockers?: string[]
+  /** What is being taken as given and is not obvious from the code: environment, scope, constraints, things believed but not checked. */
+  assumptions?: string[]
   /** What was tried and did not work, and why, so nobody repeats it. */
   deadEnds?: string[]
   /** What the person asked for or said that the next agent must keep honouring. */
@@ -81,6 +83,7 @@ export function renderHandoff(input: HandoffInput): string {
 ${inProgress}`)
   section('Next', items(input.next), true)
   section('Blocked or open', items(input.blockers))
+  section('Assumptions we are operating under', items(input.assumptions))
   const fromUser = input.fromUser?.trim() ? sanitize(input.fromUser, 1500) : ''
   if (fromUser) parts.push(`## From the person
 ${fromUser}`)
@@ -110,9 +113,9 @@ export async function recordHandoff(brain: Brain, projectId: string, input: Hand
     throw new MemoryValidationError(`status must be one of: ${HANDOFF_STATUSES.join(', ')}.`)
   }
   const has =
-    items(input.done).length || items(input.next).length || items(input.blockers).length || input.inProgress?.trim() || items(input.deadEnds).length
+    items(input.done).length || items(input.next).length || items(input.blockers).length || items(input.assumptions).length || input.inProgress?.trim() || items(input.deadEnds).length
   if (!has) {
-    throw new MemoryValidationError('A handoff needs at least one of: what is done, in progress, next, blocked, or tried and dropped.')
+    throw new MemoryValidationError('A handoff needs at least one of: what is done, in progress, next, blocked, assumptions, or tried and dropped.')
   }
 
   const topic = (input.topic?.trim() || input.workspace?.branch?.trim() || 'default').toLowerCase().slice(0, 64)
