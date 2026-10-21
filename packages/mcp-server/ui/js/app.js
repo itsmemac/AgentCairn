@@ -1,8 +1,9 @@
 import { api, onUnauthorized } from './api.js'
-import { clear, h, icon, initial, startClock, svg } from './dom.js'
+import { clear, h, icon, initial, startClock } from './dom.js'
 import { closeDrawer } from './drawer.js'
 import { live } from './store.js'
 import { mountLogin, mountSetup } from './views/auth.js'
+import { logo } from './logo.js'
 import { mountInvite } from './views/invite.js'
 
 const root = document.getElementById('root')
@@ -60,16 +61,6 @@ function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/live'
   const [path, search = ''] = raw.split('?')
   return { path, query: Object.fromEntries(new URLSearchParams(search)) }
-}
-
-function logo() {
-  return svg(
-    'svg',
-    { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
-    svg('ellipse', { cx: 16, cy: 23.5, rx: 9, ry: 3.8, fill: 'var(--text)' }),
-    svg('ellipse', { cx: 16, cy: 16.2, rx: 6.4, ry: 3.2, fill: 'var(--text)' }),
-    svg('ellipse', { class: 'pulse', cx: 16, cy: 9.6, rx: 3.8, ry: 2.8, fill: 'var(--s1)' }),
-  )
 }
 
 // ---- app shell -------------------------------------------------------------

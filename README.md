@@ -1,4 +1,9 @@
-# Agent Cairn
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/header-dark.svg">
+    <img alt="Agent Cairn" src="docs/images/header-light.svg" width="620">
+  </picture>
+</h1>
 
 **Shared, persistent project memory for AI coding agents.**
 

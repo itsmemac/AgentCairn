@@ -1,19 +1,9 @@
 import { api } from '../api.js'
-import { clear, h, svg } from '../dom.js'
+import { clear, h } from '../dom.js'
+import { logo } from '../logo.js'
 
 export function brand() {
-  return h(
-    'div',
-    { class: 'brand' },
-    svg(
-      'svg',
-      { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
-      svg('ellipse', { cx: 16, cy: 23.5, rx: 9, ry: 3.8, fill: 'var(--text)' }),
-      svg('ellipse', { cx: 16, cy: 16.2, rx: 6.4, ry: 3.2, fill: 'var(--text)' }),
-      svg('ellipse', { cx: 16, cy: 9.6, rx: 3.8, ry: 2.8, fill: 'var(--s1)' }),
-    ),
-    'Agent Cairn',
-  )
+  return h('div', { class: 'brand' }, logo(), 'Agent Cairn')
 }
 
 export function field(label, input, hint) {
