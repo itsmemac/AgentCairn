@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question or share an idea
+    url: https://github.com/itsmemac/AgentCairn/discussions
+    about: Questions, ideas and what you built with it belong in Discussions. Issues are for bugs and concrete requests.
+  - name: FAQ
+    url: https://github.com/itsmemac/AgentCairn/blob/main/docs/faq.md
+    about: Why not just resume the session, what happens when a machine dies, how the briefing is built.
   - name: Report a security vulnerability
     url: https://github.com/itsmemac/agentcairn/security/advisories/new
     about: Please report security problems privately, not as a public issue.

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before asking, the [self-hosting troubleshooting table](https://github.com/itsmemac/agentcairn/blob/main/docs/self-hosting.md#troubleshooting) and [Claude Code guide](https://github.com/itsmemac/agentcairn/blob/main/docs/claude-code.md#troubleshooting) cover the most common problems, and `cairn doctor` checks your setup end to end.
+        Open-ended questions, ideas and setups are better in [Discussions](https://github.com/itsmemac/AgentCairn/discussions); use this form when you have a specific problem to track. Before asking, the [FAQ](https://github.com/itsmemac/AgentCairn/blob/main/docs/faq.md), the [self-hosting troubleshooting table](https://github.com/itsmemac/agentcairn/blob/main/docs/self-hosting.md#troubleshooting) and [Claude Code guide](https://github.com/itsmemac/agentcairn/blob/main/docs/claude-code.md#troubleshooting) cover the most common problems, and `cairn doctor` checks your setup end to end.
   - type: textarea
     id: question
     attributes:

@@ -1,0 +1,17 @@
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share how you use Agent Cairn: your setup, a workflow that works, a memory structure you like, a dashboard or script you built around it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you build or set up?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Agents and machines involved, what went well, what you would change. Screenshots welcome (remove tokens and private project names).

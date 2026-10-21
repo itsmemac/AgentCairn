@@ -145,6 +145,8 @@ The model, the permission matrix and the rollout are in [Users, projects and acc
 - [Users, projects and access control](docs/access-control.md): roles, sharing, how access is enforced
 - [Configuration](docs/configuration.md): every setting and file
 - [Architecture](docs/architecture.md): data model, briefings, staleness, security model
+- [Discussions](https://github.com/itsmemac/AgentCairn/discussions): questions, ideas and what you built with it
+- [FAQ](docs/faq.md): why not just resume the session or use tmux, what happens when a machine dies, how the briefing is built
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 ## Repository layout

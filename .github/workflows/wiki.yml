@@ -1,0 +1,51 @@
+name: Sync wiki
+
+# The docs live in docs/ and are the source of truth; the wiki is a generated copy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'scripts/sync-wiki.mjs'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the wiki pages from docs/
+        run: node scripts/sync-wiki.mjs "$RUNNER_TEMP/wiki-out" "${{ github.repository }}" "${{ github.ref_name }}"
+      - name: Push them to the wiki
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # the wiki repository only exists once a first page has been saved in the web interface
+          if ! git clone "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.wiki.git" "$RUNNER_TEMP/wiki"; then
+            echo "::warning::The wiki repository does not exist yet. Open the Wiki tab, save a first page, then re-run this workflow."
+            exit 0
+          fi
+          cd "$RUNNER_TEMP/wiki"
+          # pages deleted from docs/ disappear from the wiki too
+          git rm -q --ignore-unmatch '*.md' || true
+          cp "$RUNNER_TEMP"/wiki-out/*.md .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "Sync from docs/ at ${GITHUB_SHA::7}"
+          git push

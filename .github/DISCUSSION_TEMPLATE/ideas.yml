@@ -1,0 +1,19 @@
+title: "[Idea]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation you are in, not the solution. What is hard or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Your idea, and what you have tried or use instead.
+  - type: textarea
+    id: who
+    attributes:
+      label: Who else would use it?
+      description: Just you, a team, a particular setup (one machine, several machines, several people).

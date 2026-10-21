@@ -1,0 +1,22 @@
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [FAQ](https://github.com/itsmemac/AgentCairn/blob/main/docs/faq.md) first: it answers the most common questions (why not just resume the session, what happens when a machine dies, how the briefing is built). `cairn doctor` checks your setup end to end.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to know?
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: How are you using it?
+      description: Your agents and machines, where the server runs, and what you are trying to achieve. Please remove tokens and passwords.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The CLI (`npm ls -g agentcairn`) and the server version shown in the dashboard.
