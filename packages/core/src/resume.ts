@@ -44,6 +44,12 @@ function checks(handoffs: readonly Memory[], sessions: readonly SessionRecord[],
     out.push(`  - Is that commit here? \`git cat-file -t ${h.commitSha.slice(0, 12)}\` should print "commit". If it does not, it was never pushed from the machine it was made on: ask the person whether that machine is still reachable.`)
     out.push(`  - What has happened since: \`git log --oneline ${h.commitSha.slice(0, 12)}..HEAD\``)
   }
+  if (h) {
+    out.push('Nothing in the handoff has been verified. "Done" is what the agent that wrote it reported, and a session can end with work unfinished that it believed finished. Before relying on it:')
+    out.push('  - Run the handoff\'s "How to check" commands, if it has any, and read the tests.')
+    out.push('  - Compare each "done" item with "Files edited" and "Commits made" in the recorded sessions below: those were recorded from the repository, not written by the agent.')
+    if (h.paths.length && h.commitSha) out.push(`  - See what changed in the files it is about since: \`git diff --stat ${h.commitSha.slice(0, 12)}..HEAD -- ${h.paths.slice(0, 8).join(' ')}\``)
+  }
   const s = sessions[0]
   if (s?.dirty.length) {
     out.push(`The latest session (${s.machine ?? 'unknown machine'}, ${when(s.updatedAt)}) ended with ${s.dirty.length} uncommitted file${s.dirty.length === 1 ? '' : 's'}: ${s.dirty.slice(0, 12).join(', ')}${s.dirty.length > 12 ? ', …' : ''}. That work may exist only on that machine. If it is gone, the notes above are what is left of it.`)

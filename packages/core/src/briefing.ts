@@ -47,6 +47,8 @@ export interface ResumeInfo {
   createdAt: string | null
   machine: string | null
   author: string | null
+  /** The files the handoff says it is about, so the client can see which changed since it was written. */
+  paths?: string[]
   session: {
     id: string
     machine: string | null
@@ -95,13 +97,18 @@ function score(m: Memory, section: Section, stale: boolean, now: Date): number {
   return m.importance * 2 + recency - (stale ? 1.5 : 0)
 }
 
-function render(m: Memory, stale: Staleness | undefined, bodyChars: number): string {
+/** A memory whose `review_by` day has come: it was true when written, and nobody has checked since. */
+const reviewDue = (m: Memory, now: Date) => Boolean(m.reviewBy) && m.reviewBy! <= now.toISOString().slice(0, 10)
+
+function render(m: Memory, stale: Staleness | undefined, bodyChars: number, now: Date): string {
   const body = m.body.replace(/\s+/g, ' ').trim()
   const clipped = body.length > bodyChars ? `${body.slice(0, bodyChars - 1).trimEnd()}…` : body
   const area = m.area ? ` [${m.area}]` : ''
   const flag =
     stale?.status === 'stale' ? ` ⚠ may be stale (changed: ${stale.changedPaths.slice(0, 2).join(', ')})` : ''
-  return `- **${m.title}**${area} #${shortId(m.id)}: ${clipped}${flag}`
+  const due = reviewDue(m, now) ? ` ⚠ review was due ${m.reviewBy}` : ''
+  const revisit = m.revisitWhen ? ` (revisit when: ${m.revisitWhen.replace(/\s+/g, ' ').slice(0, 120)})` : ''
+  return `- **${m.title}**${area} #${shortId(m.id)}: ${clipped}${revisit}${flag}${due}`
 }
 
 /** A handoff keeps its structure (headings and lists): the next steps matter more than how tidy it is, so it is cut from the end. */
@@ -173,6 +180,7 @@ function resumeInfo(handoffs: readonly Memory[], sessions: readonly SessionRecor
     createdAt: h?.createdAt ?? null,
     machine: h?.machine ?? null,
     author: h?.author ?? null,
+    paths: h?.paths ?? [],
     session: s ? { id: s.id, machine: s.machine, branch: s.branch, head: s.head, dirty: s.dirty, updatedAt: s.updatedAt } : null,
   }
 }
@@ -195,7 +203,7 @@ export function assembleBriefing(
   const isStale = (m: Memory) => staleness.get(m.id)?.status === 'stale'
 
   const active = memories.filter(m => m.status === 'active')
-  const staleIds = active.filter(isStale).map(m => m.id)
+  const staleIds = active.filter(m => isStale(m) || reviewDue(m, now)).map(m => m.id)
   const lastCheckpoint = active
     .filter(m => m.kind === 'checkpoint')
     .map(m => m.createdAt)
@@ -213,7 +221,7 @@ export function assembleBriefing(
     `${[...totalByKind.values()].reduce((a, b) => a + b, 0)} active memories. Last checkpoint: ${
       lastCheckpoint ? lastCheckpoint.slice(0, 10) : 'none'
     }.`,
-    ...(staleIds.length ? [`⚠ ${staleIds.length} memories may be stale (files changed since they were written): verify before relying on them.`] : []),
+    ...(staleIds.length ? [`⚠ ${staleIds.length} memories may be stale (files changed since they were written, or their review date has passed): verify before relying on them.`] : []),
   ].join('\n')
 
   const footerReserve = 60
@@ -235,7 +243,7 @@ export function assembleBriefing(
     const spent0 = budget
     const ranked = active
       .filter(m => m.kind === section.kind)
-      .map(m => ({ m, s: score(m, section, isStale(m), now) }))
+      .map(m => ({ m, s: score(m, section, isStale(m) || reviewDue(m, now), now) }))
       .sort((a, b) => b.s - a.s)
       .slice(0, section.max)
 
@@ -248,10 +256,10 @@ export function assembleBriefing(
     let used = 0
     let added = 0
     for (const { m } of ranked) {
-      let line = render(m, staleness.get(m.id), MAX_BODY_CHARS)
+      let line = render(m, staleness.get(m.id), MAX_BODY_CHARS, now)
       let cost = estimateTokens(line) + 1
       if (cost > budget - used) {
-        line = render(m, staleness.get(m.id), MIN_BODY_CHARS)
+        line = render(m, staleness.get(m.id), MIN_BODY_CHARS, now)
         cost = estimateTokens(line) + 1
       }
       if (cost > budget - used) continue

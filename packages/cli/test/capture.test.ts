@@ -162,6 +162,11 @@ describe('snapshots and the repository check, in a real git repository', () => {
     const ahead = await resumeChecks(dir, { handoffId: 'h', topic: 'main', commitSha: head, createdAt: null, machine: 'pc', author: null, session: null })
     expect(ahead).toEqual([`1 commit has been made since the last handoff (${head.slice(0, 7)}).`])
 
+    const moved = await resumeChecks(dir, { handoffId: 'h', topic: 'main', commitSha: head, createdAt: null, machine: 'pc', author: null, paths: ['b.ts', 'untouched.ts'], session: null })
+    expect(moved.join('\n')).toContain('1 of the files the last handoff is about changed since it was written (b.ts)')
+    const quiet = await resumeChecks(dir, { handoffId: 'h', topic: 'main', commitSha: head, createdAt: null, machine: 'pc', author: null, paths: ['untouched.ts'], session: null })
+    expect(quiet.join('\n')).not.toContain('files the last handoff is about')
+
     const other = await resumeChecks(
       dir,
       { handoffId: null, topic: 'feature', commitSha: null, createdAt: null, machine: null, author: null, session: { id: 's', machine: 'old-laptop', branch: 'feature', head: null, dirty: ['a.ts', 'b.ts'], updatedAt: '2026-10-20T10:00:00Z' } },

@@ -1,0 +1,14 @@
+[
+  { "question": "Why does the server never call an LLM?", "query": "server never calls an LLM", "pattern": "no api key|never calls an llm|does not call an llm|no llm" },
+  { "question": "Why can't the Docker build run npm under QEMU?", "query": "QEMU npm illegal instruction", "pattern": "qemu" },
+  { "question": "How did the first-admin setup race happen, and what fixed it?", "query": "setup race MERGE uniqueness constraint", "pattern": "uniqueness constraint|serializ" },
+  { "question": "Which schema change broke the previous server image?", "query": "remote_hash index previous image", "pattern": "remote_hash" },
+  { "question": "Why does cairn doctor not call process.exit on Windows?", "query": "Windows process.exit crash sockets", "pattern": "0xC0000409|exitCode" },
+  { "question": "Why were captured MCP payloads empty at first?", "query": "MCP transport Uint8Array SSE", "pattern": "uint8array" },
+  { "question": "Why do some dashboard tests only run in CI?", "query": "tests only run while no admin exists", "pattern": "adminSlotFree|only run while no|only CI" },
+  { "question": "Why does searching for a file name miss?", "query": "fulltext analyzer file path one token", "pattern": "one token" },
+  { "question": "Why must new features that need the checkout live in the CLI?", "query": "server cannot see the repo", "pattern": "cannot see the repo|no working tree" },
+  { "question": "What did the owner decide about commit trailers and pushing?", "query": "Co-Authored-By trailer never push", "pattern": "co-authored-by" },
+  { "question": "Why does the project resolve a missing id to a pending: placeholder?", "query": "pending placeholder never real id leak", "pattern": "pending:" },
+  { "question": "Why must tests clean up their own audit rows?", "query": "tests leave database as found audit rows", "pattern": "audit rows" }
+]

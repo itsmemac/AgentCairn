@@ -72,6 +72,13 @@ export async function hasCommit(cwd: string, sha: string): Promise<boolean> {
   return (await git(cwd, ['cat-file', '-t', sha])) === 'commit'
 }
 
+/** Which of `paths` changed between `base` and HEAD (empty when base is unknown here, or nothing changed). */
+export async function changedSince(cwd: string, base: string, paths: readonly string[]): Promise<string[]> {
+  if (!/^[0-9a-f]{7,40}$/i.test(base) || paths.length === 0) return []
+  const out = await git(cwd, ['diff', '--name-only', `${base}..HEAD`, '--', ...paths.slice(0, 50)])
+  return (out ?? '').split('\n').filter(Boolean)
+}
+
 /** How many commits `head` is ahead of `base` (null when either is unknown here). */
 export async function commitsBetween(cwd: string, base: string, head = 'HEAD'): Promise<number | null> {
   if (!/^[0-9a-f]{7,40}$/i.test(base)) return null

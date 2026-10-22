@@ -32,6 +32,9 @@ export interface Provenance {
   author?: string
   agent?: string
   machine?: string
+  /** Stamped from the authenticated request: the user and the token name, which the client cannot choose. */
+  writtenBy?: string
+  viaToken?: string
 }
 
 const SHA = /^[0-9a-f]{7,40}$/i
@@ -132,15 +135,20 @@ export class BrainContext {
       commitSha: given.commitSha && SHA.test(given.commitSha) ? given.commitSha : undefined,
       author: given.author?.trim().slice(0, 100) || undefined,
     }
+    const identity = {
+      writtenBy: this.principal.userId === SOLO_PRINCIPAL.userId ? undefined : this.principal.username,
+      viaToken: this.principal.tokenName,
+    }
     if (this.cwd) {
       const repo = await getRepoState(this.cwd)
       return {
+        ...identity,
         commitSha: given_.commitSha ?? repo.head ?? undefined,
         author: given_.author ?? repo.user ?? undefined,
         agent: this.clientName(),
         machine: hostname(),
       }
     }
-    return { ...given_, agent: this.clientName() }
+    return { ...given_, ...identity, agent: this.clientName() }
   }
 }

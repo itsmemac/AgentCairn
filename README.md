@@ -136,6 +136,7 @@ The model, the permission matrix and the rollout are in [Users, projects and acc
 | `cairn_areas` | List the areas memories are filed under |
 | `cairn_forget` | Delete a memory that was wrong |
 | `cairn_status` | Health check: connection, project, counts |
+| `cairn_init` | Added by `cairn mcp` and answered on your machine: link this folder and install the hooks without leaving the conversation |
 
 ## Documentation
 
@@ -146,6 +147,7 @@ The model, the permission matrix and the rollout are in [Users, projects and acc
 - [Configuration](docs/configuration.md): every setting and file
 - [Architecture](docs/architecture.md): data model, briefings, staleness, security model
 - [Discussions](https://github.com/itsmemac/AgentCairn/discussions): questions, ideas and what you built with it
+- [Benchmark](docs/benchmark.md): what a session costs with and without it (about 1.2k tokens against 22k to 212k), and what it does not prove
 - [FAQ](docs/faq.md): why not just resume the session or use tmux, what happens when a machine dies, how the briefing is built
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 

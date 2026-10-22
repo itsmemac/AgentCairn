@@ -105,7 +105,7 @@ export class Authenticator {
       const cached = this.good.get(key)
       if (cached && cached.until > now) {
         this.touch(cached.id, now)
-        return { ok: true, kind: 'managed', name: cached.name, principal: cached.principal }
+        return { ok: true, kind: 'managed', name: cached.name, principal: { ...cached.principal, tokenName: cached.name } }
       }
       if ((this.bad.get(key) ?? 0) > now) return { ok: false, reason: 'invalid' }
 
@@ -114,7 +114,7 @@ export class Authenticator {
       if (found && principal) {
         this.good.set(key, { id: found.id, name: found.name, principal, until: now + POSITIVE_MS })
         this.touch(found.id, now)
-        return { ok: true, kind: 'managed', name: found.name, principal }
+        return { ok: true, kind: 'managed', name: found.name, principal: { ...principal, tokenName: found.name } }
       }
       if (this.bad.size > 500) this.bad.clear()
       this.bad.set(key, now + NEGATIVE_MS)

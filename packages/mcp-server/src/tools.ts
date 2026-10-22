@@ -81,7 +81,10 @@ export function formatMemory(m: Memory, staleness?: Staleness, score?: number | 
   const stale =
     staleness?.status === 'stale' ? `\n⚠ may be stale (changed: ${staleness.changedPaths.slice(0, 3).join(', ')})` : ''
   const paths = m.paths.length ? `\npaths: ${m.paths.join(', ')}` : ''
-  return `#${shortId(m.id)} [${meta.join(', ')}] ${m.title}\n${m.body}${paths}${stale}`
+  const due = m.reviewBy && m.reviewBy <= new Date().toISOString().slice(0, 10) ? `\n⚠ review was due ${m.reviewBy}: check it still holds` : m.reviewBy ? `\nreview by ${m.reviewBy}` : ''
+  const revisit = m.revisitWhen ? `\nrevisit when: ${m.revisitWhen}` : ''
+  const by = m.writtenBy ? `\nwritten by ${m.writtenBy}${m.viaToken ? ` (token ${m.viaToken})` : ''}` : ''
+  return `#${shortId(m.id)} [${meta.join(', ')}] ${m.title}\n${m.body}${paths}${revisit}${due}${stale}${by}`
 }
 
 const kindSchema = z.enum(MEMORY_KINDS)
@@ -178,14 +181,18 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         paths: pathsSchema,
         importance: z.number().int().min(1).max(5).optional().describe('1 minor to 5 critical (default 3)'),
         supersedes: z.array(z.string()).max(20).optional().describe('Ids (#abc12345) of memories this replaces'),
+        review_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('A day (YYYY-MM-DD) after which this should be checked again. Use it for anything time-bound or likely to change'),
+        revisit_when: z.string().max(500).optional().describe('What would make this worth revisiting: the condition under which it stops holding'),
         commit_sha: commitShaSchema,
         author: authorSchema,
       },
     },
-    guard(async ({ commit_sha, author, ...input }) => {
+    guard(async ({ commit_sha, author, review_by, revisit_when, ...input }) => {
       const project = await ctx.project({ write: true })
       const m = await remember(ctx.brain, project.projectId, {
         ...input,
+        reviewBy: review_by,
+        revisitWhen: revisit_when,
         ...(await ctx.provenance({ commitSha: commit_sha, author })),
       })
       const replaced = m.supersedes.length ? ` (replaced ${m.supersedes.map(shortId).map(s => `#${s}`).join(', ')})` : ''
@@ -241,7 +248,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
     {
       title: 'Hand the work over',
       description:
-        'Write down where the work stands so another agent, on another machine, can carry on without being told: what is done, what is in progress and its exact state, what to do next (in order), what is blocked or open, the assumptions you are working under, what was tried and dropped, and what the person asked that must keep being honoured. Call it when you stop with work unfinished, before a long break, or when the person says they are leaving. Replaces the previous handoff for the same topic (the branch by default).',
+        'Write down where the work stands so another agent, on another machine, can carry on without being told: what is done, what is in progress and its exact state, what to do next (in order), what is blocked or open, the assumptions you are working under, what was tried and dropped (with why, and what would make it worth revisiting), and what the person asked that must keep being honoured. Call it when you stop with work unfinished, before a long break, or when the person says they are leaving. Replaces the previous handoff for the same topic (the branch by default).',
       inputSchema: {
         goal: z.string().min(1).max(200).describe('What this work is, in a line'),
         status: z.enum(HANDOFF_STATUSES).optional().describe('in_progress (default), blocked, paused or done'),
@@ -250,7 +257,11 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         blockers: lines('Open questions and things waiting on a person'),
         assumptions: lines('What you are taking as given that is not obvious from the code: environment, scope, constraints, things believed but not verified'),
         from_user: z.string().max(1500).optional().describe('What the person asked or said that the next agent must keep honouring (preferences, limits, "do not push")'),
-        dead_ends: lines('What was tried and did not work, and why, so nobody repeats it'),
+        dead_ends: z
+          .array(z.union([z.string().min(1).max(600), z.object({ idea: z.string().min(1).max(300), why: z.string().max(300).optional(), revisit_if: z.string().max(300).optional() })]))
+          .max(30)
+          .optional()
+          .describe('What was tried and dropped. Prefer {idea, why, revisit_if}: why it was dropped and what would make it worth another look, so the next agent neither repeats it nor treats it as forbidden forever'),
         done: lines('What is finished, concretely'),
         verify: z.string().max(1000).optional().describe('How to check the work: commands, tests, URLs'),
         decisions: z
@@ -275,7 +286,7 @@ export function registerTools(server: McpServer, ctx: BrainContext): void {
         blockers,
         assumptions,
         fromUser: from_user,
-        deadEnds: dead_ends,
+        deadEnds: dead_ends?.map(d => (typeof d === 'string' ? d : { idea: d.idea, why: d.why, revisitIf: d.revisit_if })),
         done,
         verify,
         decisions,

@@ -112,6 +112,16 @@ docker compose start neo4j
 
 The volume name is prefixed with your Compose project name (the folder name by default); check it with `docker volume ls`.
 
+### Prove the backup restores
+
+A backup you have never restored is a hope, not a backup. `scripts/backup-restore-check.sh` counts the live projects and memories, dumps the database, restores the dump into a throwaway container, and fails if the counts differ:
+
+```bash
+NEO4J_PASSWORD=... ./scripts/backup-restore-check.sh
+```
+
+It stops Neo4j for the length of the dump (Neo4j Community can only dump a stopped database), keeps the newest 14 dumps in `./backups`, and cleans up after itself. Run it from the folder that holds your `docker-compose.yml`, on a schedule (cron, or an Unraid user script), and copy the dumps to a different disk or machine. It is a shell script that has been syntax-checked but, so far, not run in this repository's CI; read it before you rely on it, and tell us if it does not fit your setup.
+
 ## Health and monitoring
 
 `GET /healthz` returns `{"status":"ok"}` when the server can reach Neo4j and `503` when it cannot. It needs no authentication and is what the image's `HEALTHCHECK` uses.

@@ -27,6 +27,14 @@ export interface HandoffWorkspace {
   dirty?: string[]
 }
 
+export interface DeadEnd {
+  idea: string
+  /** Why it was dropped. */
+  why?: string
+  /** What would make it worth revisiting. */
+  revisitIf?: string
+}
+
 export interface HandoffInput {
   /** What the work is, in a line. Becomes the title. */
   goal: string
@@ -41,8 +49,11 @@ export interface HandoffInput {
   blockers?: string[]
   /** What is being taken as given and is not obvious from the code: environment, scope, constraints, things believed but not checked. */
   assumptions?: string[]
-  /** What was tried and did not work, and why, so nobody repeats it. */
-  deadEnds?: string[]
+  /**
+   * What was tried and did not work, so nobody repeats it. A plain line, or the idea with why it was dropped
+   * and what would make it worth another look, so the next agent neither repeats it nor treats it as forbidden.
+   */
+  deadEnds?: (string | DeadEnd)[]
   /** What the person asked for or said that the next agent must keep honouring. */
   fromUser?: string
   /** How to check the work: commands, tests, URLs. */
@@ -58,6 +69,9 @@ export interface HandoffInput {
   author?: string
   agent?: string
   machine?: string
+  /** Set by the server from the authenticated request. */
+  writtenBy?: string
+  viaToken?: string
 }
 
 export interface HandoffResult {
@@ -67,6 +81,22 @@ export interface HandoffResult {
 
 const LIST_MAX = 30
 const ITEM_MAX = 600
+
+/** "idea: dropped because why. Revisit if when." from either a plain line or the structured form. */
+function deadEndLines(v: (string | DeadEnd)[] | undefined): string[] {
+  return (v ?? [])
+    .map(d => {
+      if (typeof d === 'string') return d
+      const idea = d.idea?.trim()
+      if (!idea) return ''
+      const why = d.why?.trim()
+      const revisit = d.revisitIf?.trim()
+      return [idea, why ? `dropped because ${why.replace(/[.\s]+$/, '')}` : '', revisit ? `revisit if ${revisit.replace(/[.\s]+$/, '')}` : ''].filter(Boolean).join('. ').replace(/^(.+?)\. dropped/, '$1: dropped')
+    })
+    .filter(x => x.trim() !== '')
+    .slice(0, LIST_MAX)
+    .map(x => sanitize(x, ITEM_MAX))
+}
 
 const items = (v: string[] | undefined): string[] =>
   (v ?? []).filter(x => typeof x === 'string' && x.trim() !== '').slice(0, LIST_MAX).map(x => sanitize(x, ITEM_MAX))
@@ -87,8 +117,8 @@ ${inProgress}`)
   const fromUser = input.fromUser?.trim() ? sanitize(input.fromUser, 1500) : ''
   if (fromUser) parts.push(`## From the person
 ${fromUser}`)
-  section('Tried and dropped', items(input.deadEnds))
-  section('Done', items(input.done))
+  section('Tried and dropped', deadEndLines(input.deadEnds))
+  section('Done', items(input.done).length ? [...items(input.done), '(reported by the agent that wrote this; verify before relying on it)'] : [])
   const verify = input.verify?.trim() ? sanitize(input.verify, 1000) : ''
   if (verify) parts.push(`## How to check
 ${verify}`)
@@ -113,7 +143,7 @@ export async function recordHandoff(brain: Brain, projectId: string, input: Hand
     throw new MemoryValidationError(`status must be one of: ${HANDOFF_STATUSES.join(', ')}.`)
   }
   const has =
-    items(input.done).length || items(input.next).length || items(input.blockers).length || items(input.assumptions).length || input.inProgress?.trim() || items(input.deadEnds).length
+    items(input.done).length || items(input.next).length || items(input.blockers).length || items(input.assumptions).length || input.inProgress?.trim() || deadEndLines(input.deadEnds).length
   if (!has) {
     throw new MemoryValidationError('A handoff needs at least one of: what is done, in progress, next, blocked, assumptions, or tried and dropped.')
   }
@@ -123,7 +153,7 @@ export async function recordHandoff(brain: Brain, projectId: string, input: Hand
     `MATCH (m:Memory {projectId: $projectId, kind: 'handoff', status: 'active', topic: $topic}) RETURN m.id AS id`,
     { projectId, topic },
   )
-  const provenance = { commitSha: input.commitSha ?? input.workspace?.head, author: input.author, agent: input.agent, machine: input.machine }
+  const provenance = { commitSha: input.commitSha ?? input.workspace?.head, author: input.author, agent: input.agent, machine: input.machine, writtenBy: input.writtenBy, viaToken: input.viaToken }
 
   const handoff = await remember(brain, projectId, {
     ...provenance,

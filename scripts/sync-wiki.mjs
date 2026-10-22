@@ -15,6 +15,7 @@ if (!out) {
 
 const PAGES = [
   ['faq.md', 'FAQ', 'FAQ'],
+  ['benchmark.md', 'Benchmark', 'Benchmark'],
   ['self-hosting.md', 'Self-hosting', 'Self-hosting'],
   ['unraid.md', 'Unraid', 'Unraid'],
   ['claude-code.md', 'Claude-Code', 'Using it with Claude Code'],

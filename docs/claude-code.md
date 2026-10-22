@@ -23,6 +23,8 @@ claude mcp get cairn     # scope, command and environment
 
 Restart Claude Code (or start a new session), then ask the agent to call `cairn_status`.
 
+For each folder you work in, run `cairn init` once (or ask the agent to call `cairn_init`, see [below](#setting-up-from-inside-a-conversation)).
+
 `cairn mcp` is a small stdio bridge to your server. It reads the project from the folder Claude Code was started in: `.cairn.json` if there is one, otherwise the git remote. A new repository therefore gets its own memory with no setup. Use `cairn init <project-id>` (Option 3) when a folder has no git remote, or when forks and mirrors should share one project.
 
 **Change the address or token, or reinstall.** `claude mcp add` refuses to overwrite, and prints `MCP server cairn already exists in user config`. Remove it first, then add it again:
@@ -119,6 +121,12 @@ In this order:
 3. Otherwise a new project, owned by you and **named after the repository**, is created from the remote on first write.
 
 An explicit name or id is never created implicitly (a typo would start an empty project); create it in the dashboard or with `cairn init <name> --create`. Projects are private to their owner; see [Users, projects and access control](access-control.md).
+
+## Setting up from inside a conversation
+
+The memory tools work in any folder as soon as the server is registered: the project comes from the git remote. What `cairn init` adds is the `.cairn.json` link, the hooks (briefing at session start, session capture, the handoff reminder) and the CLAUDE.md block.
+
+You do not have to leave the conversation to get those. `cairn mcp` runs on your machine, so it offers one extra tool, `cairn_init`, and answers it itself: ask the agent to call it, or let the agent do it when `cairn_status` shows the folder is not linked. It does what `cairn init` does (with no project it uses the git remote and creates the project, named after the repository) and reports what it wrote. The memory tools see the new link straight away. The hooks only start the next time Claude Code starts in that folder, because Claude Code reads them when it launches.
 
 ## Handing work over
 

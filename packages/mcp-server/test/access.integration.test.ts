@@ -6,6 +6,7 @@ import {
   createUser,
   deleteProject,
   findProjectByRemote,
+  getMemory,
   loadConfig,
   openBrain,
   remoteHash,
@@ -97,6 +98,12 @@ describe.skipIf(!process.env.NEO4J_URI)('users and sharing through the server', 
       secretId = shortIdIn(text(mine))
       aliceProject = (await brain.run('MATCH (u:User {id: $id})-[:MEMBER_OF {role: "owner"}]->(p:Project) RETURN p.id AS id', { id: ids.alice })).records[0]!.get('id') as string
       projects.push(aliceProject)
+
+      // who wrote it is stamped by the server from the token, whatever the client says
+      const spoof = await call(alice, 'cairn_remember', { kind: 'gotcha', title: 'Spoof attempt', body: 'Claims another author.', author: 'someone else' })
+      expect(spoof.isError).toBeUndefined()
+      const stored = await getMemory(brain, aliceProject, shortIdIn(text(spoof)))
+      expect(stored).toMatchObject({ writtenBy: names.alice, viaToken: `${run}-a`, author: 'someone else' })
 
       // Bob is on the same repository, but sees none of it
       expect(text(await call(bob, 'cairn_briefing'))).toContain('(empty)')
@@ -268,6 +275,7 @@ describe.skipIf(!process.env.NEO4J_URI)('users and sharing through the server', 
       expect(resumed).toContain('Polling for changes: too chatty')
       expect(resumed).toContain('Do not push without asking')
       expect(resumed).toContain('git cat-file -t')
+      expect(resumed).toContain('Nothing in the handoff has been verified')
       expect(resumed).toContain('not "other"') // the handoff is for branch main
 
       const denied = await call(viewer, 'cairn_handoff', { goal: 'x', next: ['y'] })

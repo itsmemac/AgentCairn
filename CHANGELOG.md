@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-22
+
+- **Dropped ideas say why.** In `cairn_handoff`, a `dead_ends` entry can be `{idea, why, revisit_if}`: why it was dropped and what would make it worth another look. Plain lines still work.
+- **Memories can carry a review date and a revisit condition.** `cairn_remember` accepts `review_by` (a day) and `revisit_when`. Once the day has passed, the briefing marks the memory "review was due …" and ranks it lower, and the condition is shown beside it.
+- **A handoff's "done" is marked as unverified, and the resume output says how to check it:** the handoff's own check commands, the files and commits recorded from the repository during the sessions, and a `git diff --stat` of the files it names. At session start the CLI also warns when files the handoff is about have changed since it was written.
+- **The server stamps who wrote each memory** (the authenticated user and the access token name), so the client cannot fake it. Shown in the dashboard, in recall and in the memory drawer. Older memories show "unknown".
+- **`cairn_init` from inside a conversation.** `cairn mcp` answers a local tool that does what `cairn init` does, so a folder can be set up without leaving the chat. The memory tools see the new link at once; the hooks start the next time Claude Code starts there.
+- `cairn --version`.
+- `scripts/backup-restore-check.sh`: dumps the database, restores it into a throwaway container and compares the counts, with notes in the self-hosting guide.
+- A token benchmark (`scripts/benchmark.mjs`, `docs/benchmark.md`): the briefing is about 1.2k tokens against 9k to 22k for the docs and 200k to 600k for the docs and all the source on the two projects measured, with what it does and does not show.
+- A FAQ, Discussions, and a wiki that mirrors `docs/`.
+
 ## [0.2.4] - 2026-10-21
 
 - Graph nodes have a shape per kind again, on top of the colour and the Neo4j-style look (octagon handoff, star overview, diamond decision, rounded square convention, triangle gotcha, circle checkpoint, tag thread, pentagon glossary, hexagon area), and the label pills show the same shape, so the graph can be read without telling colours apart.

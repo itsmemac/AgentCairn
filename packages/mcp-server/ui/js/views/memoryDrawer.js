@@ -26,7 +26,7 @@ export function openMemory(project, id, navigate) {
           chainBlock('Replaced by (newer)', chain.replacedBy),
           chainBlock('Replaced (older)', chain.replaced),
           h('dl', { class: 'kv' },
-            ...[['Written', fmt.dateTime(m.createdAt)], ['Author', m.author ?? '–'], ['Agent', m.agent ?? '–'], ['Machine', m.machine ?? '–'], ['Commit', m.commitSha ? h('span', { class: 'mono' }, m.commitSha.slice(0, 12)) : '–'], ['Full id', h('span', { class: 'mono' }, m.id)]].flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
+            ...[['Written', fmt.dateTime(m.createdAt)], ['Written by', m.writtenBy ? `${m.writtenBy}${m.viaToken ? ` (token ${m.viaToken})` : ''}` : 'unknown (written before this was recorded)'], ['Author (git, self-reported)', m.author ?? '–'], ['Agent', m.agent ?? '–'], ['Machine', m.machine ?? '–'], ['Commit', m.commitSha ? h('span', { class: 'mono' }, m.commitSha.slice(0, 12)) : '–'], ['Review by', m.reviewBy ? (m.reviewBy <= new Date().toISOString().slice(0, 10) ? `${m.reviewBy} (due)` : m.reviewBy) : '–'], ['Revisit when', m.revisitWhen ?? '–'], ['Full id', h('span', { class: 'mono' }, m.id)]].flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
           h('div', { class: 'row' },
             h('button', { class: 'btn', type: 'button', onclick: () => { drawer.close(); navigate(`#/graph?project=${encodeURIComponent(project)}&focus=${m.id.slice(0, 8)}`) } }, icon('graph'), 'Show in graph'),
             h('button', { class: 'btn', type: 'button', onclick: () => copyText(`#${m.id.slice(0, 8)}`) }, icon('copy'), 'Copy short id')),

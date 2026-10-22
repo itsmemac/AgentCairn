@@ -45,6 +45,8 @@ export interface Principal {
   role: InstanceRole
   /** Present when the request came with a limited token. */
   scope?: TokenScope
+  /** The name of the access token the request was made with, when it was a managed one. */
+  tokenName?: string
   /**
    * Solo mode: there is at most one user, so everything is theirs and project access is not checked.
    * Adding a second user turns it off.

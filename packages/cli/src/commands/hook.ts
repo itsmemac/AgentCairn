@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { type ResumeInfo, checkStaleness, commitsBetween, getWorkspace, hasCommit } from '@agentcairn/core'
+import { type ResumeInfo, changedSince, checkStaleness, commitsBetween, getWorkspace, hasCommit } from '@agentcairn/core'
 import { ServerClient, loadClientConfig } from '../client.js'
 import { hintOf, readLocalProject } from '../project.js'
 import { analyzeTurn } from '../transcript.js'
@@ -81,6 +81,8 @@ export async function resumeChecks(dir: string, resume: ResumeInfo | null | unde
     } else {
       const ahead = await commitsBetween(dir, resume.commitSha)
       if (ahead) lines.push(`${ahead === 1 ? '1 commit has' : `${ahead} commits have`} been made since the last handoff (${short}).`)
+      const moved = await changedSince(dir, resume.commitSha, resume.paths ?? [])
+      if (moved.length) lines.push(`${moved.length} of the files the last handoff is about changed since it was written (${moved.slice(0, 5).join(', ')}${moved.length > 5 ? ', …' : ''}): check its "done" claims against them before trusting them.`)
     }
   }
   if (resume.topic && workspace.branch && resume.topic !== workspace.branch.toLowerCase()) {

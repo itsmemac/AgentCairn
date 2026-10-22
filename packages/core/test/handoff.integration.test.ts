@@ -43,6 +43,24 @@ describe('renderHandoff', () => {
     expect(renderHandoff({ goal: 'x', next: ['y'] })).not.toContain('## Done')
   })
 
+  it('says why an idea was dropped and what would make it worth another look', () => {
+    const text = renderHandoff({
+      goal: 'x',
+      next: ['y'],
+      done: ['Schema'],
+      deadEnds: [
+        { idea: 'Magic links in the URL hash', why: 'the proxy strips it.', revisitIf: 'we stop using the proxy' },
+        { idea: 'Polling for changes', why: 'too chatty' },
+        'A plain line still works',
+      ],
+    })
+    expect(text).toContain('- Magic links in the URL hash: dropped because the proxy strips it. revisit if we stop using the proxy')
+    expect(text).toContain('- Polling for changes: dropped because too chatty')
+    expect(text).toContain('- A plain line still works')
+    expect(text).toContain('(reported by the agent that wrote this; verify before relying on it)')
+    expect(renderHandoff({ goal: 'x', next: ['y'] })).not.toContain('reported by the agent')
+  })
+
   it('removes secrets that slipped into it', () => {
     const text = renderHandoff({ goal: 'x', next: ['use aib_rNvYxu2-7lVJz_nGe7tW0Qs5H6jtHvj4 and the new password is Maccy@2026'] })
     expect(text).not.toContain('aib_rNv')
@@ -179,6 +197,7 @@ describe.skipIf(!process.env.NEO4J_URI)('handoffs and sessions against a live Ne
     expect(b.resume).toMatchObject({ handoffId: now.handoff.id, topic: 'resume', commitSha: 'b'.repeat(40), machine: 'laptop' })
     expect(b.resume?.session).toMatchObject({ id: `new-${run}` })
     expect(b.tokens).toBeLessThanOrEqual(2000)
+    expect(b.resume?.paths).toEqual([])
   })
 
   it('a small budget still fits, and an empty project shows its sessions under the onboarding text', async () => {

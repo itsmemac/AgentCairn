@@ -79,12 +79,12 @@ A token acts as the user who created it, and every call is checked against that 
 | --- | --- | --- |
 | `cairn_briefing` | `max_tokens?` (200–8000, default 1500) | Budgeted briefing; onboarding instructions for an empty project |
 | `cairn_recall` | `query?`, `kind?`, `area?`, `limit?`, `include_superseded?`, `sort?` | Fulltext search scoped to the project; `sort` (`importance`, `recent`, `oldest`) applies when not searching text |
-| `cairn_remember` | `kind`, `title`, `body`, `area?`, `paths?`, `importance?` (1–5), `supersedes?` | One fact per memory; ids may be the 8-character short form |
+| `cairn_remember` | `kind`, `title`, `body`, `area?`, `paths?`, `importance?` (1–5), `supersedes?`, `review_by?` (a day), `revisit_when?` | One fact per memory; ids may be the 8-character short form |
 | `cairn_checkpoint` | `goal`, `outcome`, `decisions?`, `next?`, `resolves?`, `area?`, `paths?` | Also files each decision and an open thread for `next` |
 | `cairn_areas` | none | Areas with memory counts |
 | `cairn_forget` | `id` | Deletes a memory; anything it replaced becomes active again |
-| `cairn_handoff` | `goal`, `status?`, `in_progress?`, `next?`, `blockers?`, `from_user?`, `dead_ends?`, `done?`, `verify?`, `decisions?`, `paths?`, `topic?` | Where the work stands, for whoever picks it up. Replaces the previous handoff for the same topic. |
+| `cairn_handoff` | `goal`, `status?`, `in_progress?`, `next?`, `blockers?`, `assumptions?`, `from_user?`, `dead_ends?` (a line, or `{idea, why?, revisit_if?}`), `done?`, `verify?`, `decisions?`, `paths?`, `topic?` | Where the work stands, for whoever picks it up. Replaces the previous handoff for the same topic. |
 | `cairn_resume` | none | The latest handoffs in full, recent sessions, open threads and how to check the repository |
 | `cairn_status` | none | Connection, project and counts |
 
-`cairn_remember` and `cairn_checkpoint` also accept `commit_sha` and `author`, which the PreToolUse hook fills in. Memory kinds are `overview`, `decision`, `convention`, `gotcha`, `checkpoint`, `thread`, `glossary` and `handoff` (written only by `cairn_handoff`).
+`cairn_remember`, `cairn_checkpoint` and `cairn_handoff` also accept `commit_sha` and `author`, which the PreToolUse hook fills in. The server itself stamps every new memory with the authenticated user and the access token it was written with (shown as "written by" in the dashboard and in recall); the client cannot set those. `cairn mcp` adds one more tool, `cairn_init`, which it answers on your machine (see the [Claude Code guide](claude-code.md#setting-up-from-inside-a-conversation)). Memory kinds are `overview`, `decision`, `convention`, `gotcha`, `checkpoint`, `thread`, `glossary` and `handoff` (written only by `cairn_handoff`).

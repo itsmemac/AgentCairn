@@ -35,6 +35,14 @@ export interface RememberInput {
   author?: string
   agent?: string
   machine?: string
+  /** Day (YYYY-MM-DD) after which this should be checked again; the briefing flags it as due. */
+  reviewBy?: string
+  /** What would make this worth revisiting: the condition under which a note, a dropped idea or a decision stops holding. */
+  revisitWhen?: string
+  /** Set by the server from the authenticated request, never by the client: the user who wrote it. */
+  writtenBy?: string
+  /** Set by the server: the name of the access token it was written with. */
+  viaToken?: string
 }
 
 export interface Memory {
@@ -53,6 +61,10 @@ export interface Memory {
   author: string | null
   agent: string | null
   machine: string | null
+  reviewBy: string | null
+  revisitWhen: string | null
+  writtenBy: string | null
+  viaToken: string | null
   createdAt: string
 }
 
@@ -125,7 +137,7 @@ export class ProjectMissingError extends Error {
   }
 }
 
-const LIMITS = { title: 200, body: 20_000, area: 64, paths: 50, path: 500, supersedes: 20 }
+const LIMITS = { title: 200, body: 20_000, area: 64, paths: 50, path: 500, supersedes: 20, revisitWhen: 500 }
 export const DEFAULT_RECALL_LIMIT = 10
 export const MAX_RECALL_LIMIT = 100
 
@@ -158,6 +170,12 @@ function validate(input: RememberInput): void {
   if ((input.paths?.length ?? 0) > LIMITS.paths || input.paths?.some(p => !p || p.length > LIMITS.path)) {
     throw new MemoryValidationError(`paths: at most ${LIMITS.paths}, each 1-${LIMITS.path} characters.`)
   }
+  if (input.reviewBy !== undefined && !(/^\d{4}-\d{2}-\d{2}$/.test(input.reviewBy) && !Number.isNaN(Date.parse(input.reviewBy)))) {
+    throw new MemoryValidationError('review_by must be a date like 2026-12-31.')
+  }
+  if (input.revisitWhen !== undefined && input.revisitWhen.length > LIMITS.revisitWhen) {
+    throw new MemoryValidationError(`revisit_when: at most ${LIMITS.revisitWhen} characters.`)
+  }
   if ((input.supersedes?.length ?? 0) > LIMITS.supersedes) {
     throw new MemoryValidationError(`supersedes: at most ${LIMITS.supersedes} ids.`)
   }
@@ -165,6 +183,7 @@ function validate(input: RememberInput): void {
 
 const MEMORY_RETURN = `
   m{.id, .projectId, .kind, .title, .body, .importance, .status, .topic, .commitSha, .author, .agent, .machine,
+    .reviewBy, .revisitWhen, .writtenBy, .viaToken,
     paths: coalesce(m.paths, []), createdAt: toString(m.createdAt)} AS m,
   [(a:Area)-[:HAS_MEMORY]->(m) | a.name][0] AS area,
   [(m)-[:SUPERSEDES]->(o:Memory) | o.id] AS supersedes`
@@ -183,6 +202,10 @@ function toMemory(row: Row): Memory {
     author: m.author ?? null,
     agent: m.agent ?? null,
     machine: m.machine ?? null,
+    reviewBy: m.reviewBy ?? null,
+    revisitWhen: m.revisitWhen ?? null,
+    writtenBy: m.writtenBy ?? null,
+    viaToken: m.viaToken ?? null,
   }
 }
 
@@ -215,6 +238,10 @@ export async function remember(brain: Brain, projectId: string, input: RememberI
       author: input.author ?? null,
       agent: input.agent ?? null,
       machine: input.machine ?? null,
+      reviewBy: input.reviewBy ?? null,
+      revisitWhen: input.revisitWhen?.trim() || null,
+      writtenBy: input.writtenBy ?? null,
+      viaToken: input.viaToken ?? null,
     },
   }
 

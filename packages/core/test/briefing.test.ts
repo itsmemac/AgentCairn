@@ -77,6 +77,15 @@ describe('assembleBriefing', () => {
     expect(build([gone, mem('overview')], 1000).text).not.toContain('old rule')
   })
 
+  it('flags a memory whose review day has passed, and shows when to revisit it', () => {
+    const due = mem('convention', { title: 'due one', reviewBy: '2026-01-01', revisitWhen: 'the proxy is gone' })
+    const later = mem('convention', { title: 'later one', reviewBy: '2999-01-01' })
+    const text = build([due, later], 2000).text
+    expect(text).toMatch(/due one.*revisit when: the proxy is gone.*review was due 2026-01-01/)
+    expect(text).not.toMatch(/later one.*review was due/)
+    expect(text).toContain('review date has passed')
+  })
+
   it('flags stale memories and ranks them below fresh ones of equal weight', () => {
     const stale = mem('convention', { title: 'stale one', paths: ['a.ts'] })
     const fresh = mem('convention', { title: 'fresh one' })

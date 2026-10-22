@@ -124,6 +124,17 @@ describe.skipIf(!process.env.NEO4J_URI)('memories against a live Neo4j', () => {
     expect(await reason([a.id, 'deadbeefdead'])).toMatch(/already replaced.*Nothing was written/s)
   })
 
+  it('keeps review_by, revisit_when and who wrote it, and rejects a bad review day', async () => {
+    const m = await remember(brain, proj, { ...base, title: 'Time bound', body: 'true for now', reviewBy: '2999-12-31', revisitWhen: 'the API v2 ships', writtenBy: 'ann', viaToken: 'laptop' })
+    const got = await getMemory(brain, proj, m.id)
+    expect(got).toMatchObject({ reviewBy: '2999-12-31', revisitWhen: 'the API v2 ships', writtenBy: 'ann', viaToken: 'laptop' })
+    const plain = await remember(brain, proj, { ...base, title: 'Plain', body: 'nothing extra' })
+    expect(plain).toMatchObject({ reviewBy: null, revisitWhen: null, writtenBy: null, viaToken: null })
+    for (const reviewBy of ['tomorrow', '2026-13-45', '31/12/2026']) {
+      await expect(remember(brain, proj, { ...base, title: 'Bad', body: 'bad', reviewBy })).rejects.toBeInstanceOf(MemoryValidationError)
+    }
+  })
+
   it('concurrent supersedes of one memory: exactly one wins', async () => {
     const target = await remember(brain, proj, { ...base, title: 'Contested', body: 'contested body' })
     const attempts = await Promise.allSettled(

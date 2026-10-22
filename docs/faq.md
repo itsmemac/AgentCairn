@@ -8,9 +8,12 @@ Short answers to the questions people ask most. If yours is not here, open a [qu
 - [How is this different from CLAUDE.md or the agent's own memory files?](#how-is-this-different-from-claudemd-or-the-agents-own-memory-files)
 - [How is it different from other memory tools or a code index?](#how-is-it-different-from-other-memory-tools-or-a-code-index)
 - [How does the briefing decide what to include?](#how-does-the-briefing-decide-what-to-include)
+- [How many tokens does it save?](#how-many-tokens-does-it-save)
 - [Does it call an LLM? What does it cost?](#does-it-call-an-llm-what-does-it-cost)
 - [What is a handoff, and what goes in it?](#what-is-a-handoff-and-what-goes-in-it)
 - [What does it record from my sessions, and what about secrets?](#what-does-it-record-from-my-sessions-and-what-about-secrets)
+- [How does it handle memories that go stale?](#how-does-it-handle-memories-that-go-stale)
+- [Can I trust what a handoff says is done?](#can-i-trust-what-a-handoff-says-is-done)
 - [How do backups, restores and encryption work?](#how-do-backups-restores-and-encryption-work)
 - [Which agents does it work with?](#which-agents-does-it-work-with)
 - [Do I need accounts and roles?](#do-i-need-accounts-and-roles)
@@ -74,6 +77,10 @@ Deterministically, with no model involved, and not by how often a memory was ref
 
 The briefing opens with the latest handoff and the recent sessions. Then sections fill in a fixed priority: overview, conventions, gotchas, open threads, recent checkpoints, decisions, glossary. Each section gets a share of the token budget plus whatever earlier sections left unused. Inside a section, memories are ranked by importance (1 to 5, set by the agent) plus recency, minus a penalty if the files the memory was written about have changed since. A memory that does not fit is shortened once, then skipped. The budget defaults to 1200 tokens (`cairn briefing --tokens`, or `CAIRN_BRIEFING_TOKENS` for the hook).
 
+## How many tokens does it save?
+
+On the two projects measured, the briefing is about 1,200 tokens, against roughly 9,000 to 22,000 to read the docs and 200,000 to 600,000 to read the docs and all the source, and it stays near that size as the project grows. That is the cost of getting oriented, not of finishing a task, and no live agent task comparison has been run. The method, the results and the limits are in the [benchmark](benchmark.md).
+
 ## Does it call an LLM? What does it cost?
 
 No. The server only stores, ranks and retrieves. The agent writes the memories, so there is no API key to manage and no per-token cost on the server. Running it costs whatever your Docker host and a Neo4j container cost.
@@ -96,9 +103,28 @@ Per session: the first and latest things you asked (capped), the agent's last me
 
 Common token shapes, stated passwords, `user:password@` in URLs and private keys are removed on your machine before anything is sent, and again on the server before storing. This is best effort, so there are three modes: `CAIRN_SESSION_CAPTURE=full` (the default), `meta` (no words are sent, only the file and commit facts) and `off` (nothing is sent). Prompts are kept to 800 characters and the reply to 3000.
 
+## How does it handle memories that go stale?
+
+In two ways, and neither expires anything on its own.
+
+- **The files changed.** Each memory records the commit and the files it was written about. At session start the CLI checks those files against your working tree, and the briefing marks the memory "may be stale (changed: …)" and ranks it lower. A renamed or edited file is caught without anyone doing anything. Memories written with no file paths are never flagged this way.
+- **A date or a condition.** A memory can carry `review_by` (a day) and `revisit_when` (what would make it worth another look). Once the day has passed the briefing marks it "review was due …", and the condition is shown next to it. Use these for anything time-bound or likely to change.
+
+What is not detected: a decision that was reversed without any file changing. That needs an agent to notice and supersede the old memory with the new one, which keeps the old one as history.
+
+## Can I trust what a handoff says is done?
+
+Treat it as notes from a colleague, not a guarantee. A handoff is text the agent wrote, and nothing checks a "done". Three things help:
+
+- Every memory records who wrote it. The server stamps the authenticated user and the access token on each new memory, so the client cannot fake it (the git author is separate, and self-reported).
+- The resume output says outright that nothing in the handoff is verified, and points at what to check: the handoff's own "how to check" commands, and the files and commits that were recorded from the repository during the sessions, not by the agent. At session start the CLI also warns if the files a handoff is about have changed since it was written, if its commit was never pushed, or if the branch differs.
+- A new handoff replaces the previous one for the topic but keeps it as history, so a wrong "done" can be traced and the earlier version recovered.
+
+Dropped ideas can say why they were dropped and what would make them worth revisiting (`{idea, why, revisit_if}`), so the next agent neither repeats them nor treats them as forbidden for ever.
+
 ## How do backups, restores and encryption work?
 
-Everything lives in Neo4j, so backups are Neo4j backups. [Self-hosting](self-hosting.md#backups) shows a `neo4j-admin database dump`. Honest gaps: there are no versioned snapshots and no built-in restore test, so schedule your own dump and try restoring it now and then.
+Everything lives in Neo4j, so backups are Neo4j backups. [Self-hosting](self-hosting.md#backups) shows a `neo4j-admin database dump`. `scripts/backup-restore-check.sh` dumps the database, restores the dump into a throwaway container and compares the counts, so you can schedule it and know the backup works. It has been syntax-checked but not yet run in CI. There are still no versioned snapshots.
 
 Memories are never edited in place: a changed fact creates a new memory that supersedes the old one, and the old one stays as history. That keeps concurrent writers from clobbering each other and means a mistaken change can be traced.
 

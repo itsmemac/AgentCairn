@@ -26,6 +26,9 @@ export interface CheckpointInput {
   author?: string
   agent?: string
   machine?: string
+  /** Set by the server from the authenticated request. */
+  writtenBy?: string
+  viaToken?: string
 }
 
 export interface CheckpointResult {
@@ -47,6 +50,8 @@ export async function checkpoint(brain: Brain, projectId: string, input: Checkpo
     author: input.author,
     agent: input.agent,
     machine: input.machine,
+    writtenBy: input.writtenBy,
+    viaToken: input.viaToken,
   }
   const next = input.next?.trim()
 

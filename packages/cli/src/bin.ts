@@ -8,6 +8,7 @@ import { runInit } from './commands/init.js'
 import { installCommand } from './commands/installCommand.js'
 import { runMcpProxy } from './commands/mcpProxy.js'
 import { hintOf, readLocalProject } from './project.js'
+import { cliVersion } from './version.js'
 
 const HELP = `cairn: shared project memory for AI agents
 
@@ -20,6 +21,7 @@ Usage:
       --mcp-json           Write .mcp.json even if the server is already registered for every project
       --no-claude          Only link the folder; skip .mcp.json, hooks and CLAUDE.md
   cairn doctor             Check the setup end to end
+  cairn --version          Print the CLI version
   cairn briefing           Print the briefing an agent would get
       --tokens <n>         Token budget (default 1200)
   cairn resume             Everything needed to carry on where the last agent stopped
@@ -47,6 +49,12 @@ async function main(): Promise<number> {
     case '-h':
       print(HELP)
       return command === undefined ? 1 : 0
+
+    case '--version':
+    case '-v':
+    case 'version':
+      print(cliVersion())
+      return 0
 
     case 'init': {
       const { values, positionals } = parseArgs({
