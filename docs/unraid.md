@@ -22,7 +22,7 @@ GitHub publishes it as a package. If the repository is private the package start
 
 ### Option A: Docker tab with the template
 
-1. Copy [`unraid-template.xml`](unraid-template.xml) to `/boot/config/plugins/dockerMan/templates-user/cairn.xml` on the server.
+1. The template lives in [itsmemac/unraid-template](https://github.com/itsmemac/unraid-template). Search for Agent Cairn in **Community Applications** once it is listed. Until then: **Settings → Docker → Advanced View → Template repositories**, add `https://github.com/itsmemac/unraid-template` and save.
 2. Docker tab → **Add Container** → choose the `cairn` template.
 3. Set **Neo4j URI** and **Neo4j password**, then Apply.
 
